@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EzGest - SaaS Full CRUD</title>
+    <style>
+        :root { --p: #2563eb; --d: #e11d48; --s: #10b981; --bg: #f8fafc; --text: #1e293b; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .hidden { display: none !important; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        input, select { padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-size: 14px; }
+        button { cursor: pointer; padding: 10px 15px; border-radius: 6px; border: none; font-weight: 600; color: white; background: var(--p); transition: 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-grey { background: #64748b; }
+        .btn-red { background: var(--d); }
+        .btn-save { background: var(--s); }
+        .btn-edit { background: #f59e0b; margin-right: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #f1f5f9; }
+        .actions { text-align: right; white-space: nowrap; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<div id="app" style="max-width: 1100px; margin: auto;">
+
+    <div id="view-login" class="card" style="max-width: 350px; margin: 50px auto; text-align: center;">
+        <h2>EzGest Login</h2>
+        <input type="text" id="uIn" placeholder="Username">
+        <input type="password" id="pIn" placeholder="Password">
+        <button onclick="doLogin()" style="width:100%">Accedi</button>
+    </div>
+
+    <div id="view-selection" class="hidden">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+                <h2>I tuoi spazi di lavoro</h2>
+                <button class="btn-grey" onclick="doLogout()">Esci</button>
+            </div>
+            <div id="list-companies" style="display:flex; gap:10px; flex-wrap:wrap; margin:15px 0;"></div>
+            <hr>
+            <div class="grid">
+                <div style="background:#f1f5f9; padding:15px; border-radius:8px">
+                    <h4>Crea</h4>
+                    <input type="text" id="newCo" placeholder="Nome Attività">
+                    <button onclick="doCreateCo()" style="width:100%">Crea</button>
+                </div>
+                <div style="background:#f1f5f9; padding:15px; border-radius:8px">
+                    <h4>Unisciti</h4>
+                    <input type="text" id="joinCode" placeholder="Codice Invito">
+                    <button class="btn-grey" onclick="doJoinCo()" style="width:100%">Unisciti</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-dashboard" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <div>
+                <h1 id="activeCoName" style="margin:0">Dashboard</h1>
+                <small id="activeCoCode" style="color:var(--p); font-weight:bold"></small>
+            </div>
+            <button class="btn-grey" onclick="showSelection()">⬅️ Cambia Azienda</button>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>📂 Categorie</h3>
+                <div style="display:flex; gap:5px">
+                    <input type="text" id="inCat" placeholder="Nuova categoria" style="margin:0">
+                    <button onclick="addCat()">+</button>
+                </div>
+                <table id="tCats"></table>
+            </div>
+
+            <div class="card">
+                <h3>📦 Prodotti</h3>
+                <div style="display:grid; grid-template-columns: 1fr 100px; gap:5px">
+                    <input type="text" id="inPN" placeholder="Nome">
+                    <input type="number" id="inPP" placeholder="€">
+                </div>
+                <select id="selPC"></select>
+                <button onclick="addProd()" style="width:100%">Salva Prodotto</button>
+                <table id="tProds"></table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API = 'http://localhost:8787/api';
+    let currentId = null;
+
+    function navigate(id) {
+        document.querySelectorAll('#app > div').forEach(d => d.classList.add('hidden'));
+        document.getElementById(id).classList.remove('hidden');
+    }
+
+    // --- AUTH & SELECTION ---
+    async function doLogin() {
+        const res = await fetch(`${API}/login`, { method: 'POST', body: JSON.stringify({username: uIn.value, password: pIn.value}) });
+        const d = await res.json();
+        if(d.success) { localStorage.setItem('ezUser', JSON.stringify(d.user)); showSelection(); } else alert("Credenziali errate");
+    }
+
+    async function showSelection() {
+        const user = JSON.parse(localStorage.getItem('ezUser'));
+        if(!user) return navigate('view-login');
+        navigate('view-selection');
+        const res = await fetch(`${API}/user/companies?username=${user.username}`);
+        const cos = await res.json();
+        document.getElementById('list-companies').innerHTML = cos.map(c => 
+            `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`
+        ).join(' ');
+    }
+
+    async function doCreateCo() {
+        const u = JSON.parse(localStorage.getItem('ezUser'));
+        if(!newCo.value) return;
+        await fetch(`${API}/azienda/crea`, { method: 'POST', body: JSON.stringify({companyName: newCo.value, ownerUsername: u.username}) });
+        newCo.value = ""; showSelection();
+    }
+
+    async function doJoinCo() {
+        const u = JSON.parse(localStorage.getItem('ezUser'));
+        const res = await fetch(`${API}/azienda/unisciti`, { method: 'POST', body: JSON.stringify({inviteCode: joinCode.value, username: u.username}) });
+        if(res.ok) { joinCode.value = ""; showSelection(); } else alert("Codice errato");
+    }
+
+    function openDash(id, name, code) {
+        currentId = id;
+        document.getElementById('activeCoName').innerText = name;
+        document.getElementById('activeCoCode').innerText = "CODICE INVITO: " + code;
+        navigate('view-dashboard');
+        refresh();
+    }
+
+    function refresh() { loadCats(); loadProds(); }
+
+    // --- CATEGORIE (EDIT + DELETE) ---
+    async function loadCats() {
+        const res = await fetch(`${API}/categorie?companyId=${currentId}`);
+        const cats = await res.json();
+        document.getElementById('tCats').innerHTML = cats.map(c => `
+            <tr id="row-cat-${c._id}">
+                <td>${c.nome}</td>
+                <td class="actions">
+                    <button class="btn-edit" onclick="editCatRow('${c._id}','${c.nome}')">✏️</button>
+                    <button class="btn-red" onclick="delItem('categorie','${c._id}')">🗑️</button>
+                </td>
+            </tr>`).join('');
+        document.getElementById('selPC').innerHTML = cats.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
+    }
+
+    function editCatRow(id, old) {
+        const row = document.getElementById(`row-cat-${id}`);
+        row.innerHTML = `
+            <td><input type="text" id="ec-${id}" value="${old}" style="margin:0"></td>
+            <td class="actions">
+                <button class="btn-save" onclick="saveCatEdit('${id}')">💾</button>
+                <button class="btn-grey" onclick="loadCats()">X</button>
+            </td>`;
+    }
+
+    async function saveCatEdit(id) {
+        const nome = document.getElementById(`ec-${id}`).value;
+        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome}) });
+        loadCats();
+    }
+
+    async function addCat() {
+        if(!inCat.value) return;
+        await fetch(`${API}/categorie?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inCat.value}) });
+        inCat.value = ""; loadCats();
+    }
+
+    // --- PRODOTTI (EDIT + DELETE) ---
+    async function loadProds() {
+        const res = await fetch(`${API}/prodotti?companyId=${currentId}`);
+        const prods = await res.json();
+        document.getElementById('tProds').innerHTML = prods.map(p => `
+            <tr id="row-prod-${p._id}">
+                <td><strong>${p.nome}</strong><br><small>${p.categoria}</small></td>
+                <td>${p.prezzo}€</td>
+                <td class="actions">
+                    <button class="btn-edit" onclick="editProdRow('${p._id}','${p.nome}',${p.prezzo},'${p.categoria}')">✏️</button>
+                    <button class="btn-red" onclick="delItem('prodotti','${p._id}')">🗑️</button>
+                </td>
+            </tr>`).join('');
+    }
+
+    function editProdRow(id, n, p, c) {
+        const row = document.getElementById(`row-prod-${id}`);
+        const cats = Array.from(document.getElementById('selPC').options).map(o => 
+            `<option value="${o.value}" ${o.value === c ? 'selected' : ''}>${o.value}</option>`
+        ).join('');
+        row.innerHTML = `
+            <td colspan="2">
+                <input type="text" id="en-${id}" value="${n}">
+                <input type="number" id="ep-${id}" value="${p}">
+                <select id="ec-${id}">${cats}</select>
+            </td>
+            <td class="actions">
+                <button class="btn-save" onclick="saveProdEdit('${id}')">💾</button>
+                <button class="btn-grey" onclick="loadProds()">X</button>
+            </td>`;
+    }
+
+    async function saveProdEdit(id) {
+        const body = { 
+            nome: document.getElementById(`en-${id}`).value, 
+            prezzo: document.getElementById(`ep-${id}`).value, 
+            categoria: document.getElementById(`ec-${id}`).value 
+        };
+        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify(body) });
+        loadProds();
+    }
+
+    async function addProd() {
+        if(!inPN.value || !inPP.value) return;
+        await fetch(`${API}/prodotti?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}) });
+        inPN.value = ""; inPP.value = ""; loadProds();
+    }
+
+    async function delItem(type, id) {
+        if(confirm("Eliminare definitivamente?")) {
+            await fetch(`${API}/${type}?id=${id}&companyId=${currentId}`, { method: 'DELETE' });
+            refresh();
+        }
+    }
+
+    function doLogout() { localStorage.clear(); location.reload(); }
+    if(localStorage.getItem('ezUser')) showSelection();
+</script>
+</body>
+</html>

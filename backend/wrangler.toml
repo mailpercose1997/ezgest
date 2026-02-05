@@ -1,0 +1,9 @@
+name = "ezgest-backend"
+main = "src/index.js"
+compatibility_date = "2026-02-05"
+compatibility_flags = [ "nodejs_compat" ]
+
+[vars]
+DB_NAME = "EzGest"
+
+# Questo dice a wrangler di includere i segreti dal file .dev.vars durante i test locali
