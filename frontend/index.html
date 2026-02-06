@@ -3,107 +3,236 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EzGest - SaaS Full CRUD</title>
+    <title>EzGest SaaS - POS & Management</title>
     <style>
-        :root { --p: #2563eb; --d: #e11d48; --s: #10b981; --bg: #f8fafc; --text: #1e293b; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        :root { --p: #2563eb; --d: #e11d48; --s: #10b981; --bg: #f1f5f9; --text: #1e293b; }
+        body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; overflow-x: hidden; }
         .hidden { display: none !important; }
+        
+        /* Layout Card */
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        input, select { padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-size: 14px; }
-        button { cursor: pointer; padding: 10px 15px; border-radius: 6px; border: none; font-weight: 600; color: white; background: var(--p); transition: 0.2s; }
-        button:hover { opacity: 0.9; }
-        .btn-grey { background: #64748b; }
-        .btn-red { background: var(--d); }
-        .btn-save { background: var(--s); }
-        .btn-edit { background: #f59e0b; margin-right: 5px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #f1f5f9; }
-        .actions { text-align: right; white-space: nowrap; }
-        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        
+        /* Navbar Dashboard */
+        .nav-tabs { display: flex; background: white; border-bottom: 1px solid #e2e8f0; padding: 0 20px; gap: 20px; position: sticky; top: 0; z-index: 10; }
+        .tab { padding: 15px 10px; cursor: pointer; font-weight: 600; color: #64748b; border-bottom: 3px solid transparent; transition: 0.2s; }
+        .tab.active { color: var(--p); border-bottom-color: var(--p); }
+
+        /* POS UI: Categorie Orizzontali */
+        .category-slider { display: flex; overflow-x: auto; gap: 10px; padding: 15px 20px; background: #fff; border-bottom: 1px solid #e2e8f0; scrollbar-width: none; }
+        .category-slider::-webkit-scrollbar { display: none; }
+        .cat-pill { flex: 0 0 auto; padding: 8px 20px; border-radius: 20px; background: #f1f5f9; border: 1px solid #cbd5e1; cursor: pointer; font-weight: 500; font-size: 14px; }
+        .cat-pill.active { background: var(--p); color: white; border-color: var(--p); }
+
+        /* POS UI: Grid & Cart */
+        .pos-container { display: grid; grid-template-columns: 1fr 380px; gap: 0; height: calc(100vh - 110px); }
+        .products-area { overflow-y: auto; padding: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; align-content: start; }
+        .product-card { background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 10px; text-align: center; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .product-card:hover { border-color: var(--p); transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        
+        .cart-panel { background: white; border-left: 1px solid #e2e8f0; display: flex; flex-direction: column; }
+        .cart-items { flex: 1; overflow-y: auto; padding: 15px; }
+        .cart-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f8fafc; font-size: 14px; }
+        .cart-total { padding: 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+
+        /* Tabelle & Bottoni */
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 12px 8px; border-bottom: 1px solid #f1f5f9; }
+        input, select { padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+        button { cursor: pointer; padding: 10px 15px; border-radius: 8px; border: none; font-weight: 600; color: white; background: var(--p); transition: 0.2s; }
+        .btn-grey { background: #64748b; } .btn-red { background: var(--d); } .btn-save { background: var(--s); }
+        .btn-edit { background: #f59e0b; font-size: 12px; }
+        
+        @media (max-width: 900px) { .pos-container { grid-template-columns: 1fr; } .cart-panel { border-top: 2px solid #ddd; height: 300px; } }
     </style>
 </head>
 <body>
 
-<div id="app" style="max-width: 1100px; margin: auto;">
-
-    <div id="view-login" class="card" style="max-width: 350px; margin: 50px auto; text-align: center;">
-        <h2>EzGest Login</h2>
+<div id="app">
+    <div id="view-login" class="card" style="max-width: 350px; margin: 100px auto; text-align: center;">
+        <h2 style="color: var(--p)">EzGest SaaS</h2>
         <input type="text" id="uIn" placeholder="Username">
         <input type="password" id="pIn" placeholder="Password">
         <button onclick="doLogin()" style="width:100%">Accedi</button>
     </div>
 
-    <div id="view-selection" class="hidden">
-        <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center">
-                <h2>I tuoi spazi di lavoro</h2>
+    <div id="view-selection" class="hidden" style="padding: 40px;">
+        <div class="card" style="max-width: 800px; margin: auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+                <h2 style="margin:0">Le tue Attività</h2>
                 <button class="btn-grey" onclick="doLogout()">Esci</button>
             </div>
-            <div id="list-companies" style="display:flex; gap:10px; flex-wrap:wrap; margin:15px 0;"></div>
-            <hr>
-            <div class="grid">
-                <div style="background:#f1f5f9; padding:15px; border-radius:8px">
-                    <h4>Crea</h4>
-                    <input type="text" id="newCo" placeholder="Nome Attività">
-                    <button onclick="doCreateCo()" style="width:100%">Crea</button>
-                </div>
-                <div style="background:#f1f5f9; padding:15px; border-radius:8px">
-                    <h4>Unisciti</h4>
-                    <input type="text" id="joinCode" placeholder="Codice Invito">
-                    <button class="btn-grey" onclick="doJoinCo()" style="width:100%">Unisciti</button>
-                </div>
+            <div id="list-companies" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;"></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; border-top:1px solid #eee; padding-top:20px">
+                <div><h4>Crea Attività</h4><input id="newCo" placeholder="Nome"><button onclick="doCreateCo()">Crea</button></div>
+                <div><h4>Unisciti con Codice</h4><input id="joinCode" placeholder="Codice"><button class="btn-grey" onclick="doJoinCo()">Unisciti</button></div>
             </div>
         </div>
     </div>
 
     <div id="view-dashboard" class="hidden">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <div style="background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee">
             <div>
-                <h1 id="activeCoName" style="margin:0">Dashboard</h1>
-                <small id="activeCoCode" style="color:var(--p); font-weight:bold"></small>
+                <strong id="activeCoName">Azienda</strong>
+                <small id="activeCoCode" style="margin-left:10px; color:var(--p)"></small>
             </div>
-            <button class="btn-grey" onclick="showSelection()">⬅️ Cambia Azienda</button>
+            <button class="btn-grey" style="padding:5px 12px; font-size:12px" onclick="showSelection()">Cambia Azienda</button>
         </div>
 
-        <div class="grid">
+        <div class="nav-tabs">
+            <div class="tab active" id="tab-pos" onclick="switchTab('pos')">🛒 SCONTRINO</div>
+            <div class="tab" id="tab-gest" onclick="switchTab('gest')">⚙️ GESTIONE</div>
+            <div class="tab" id="tab-repo" onclick="switchTab('repo')">📊 REPORT</div>
+        </div>
+
+        <div id="sub-pos" class="tab-content">
+            <div class="category-slider" id="pos-cat-bar"></div>
+            <div class="pos-container">
+                <div class="products-area" id="pos-products"></div>
+                <div class="cart-panel">
+                    <div style="padding:15px; font-weight:bold; border-bottom:1px solid #eee">Carrello</div>
+                    <div class="cart-items" id="cart-list"></div>
+                    <div class="cart-total">
+                        <div style="display:flex; justify-content:space-between; font-size:22px; font-weight:800; margin-bottom:15px">
+                            <span>TOTALE</span><span><span id="cart-sum">0.00</span>€</span>
+                        </div>
+                        <button class="btn-save" onclick="processSale()" style="width:100%; padding:15px; font-size:18px">CHIUDI SCONTRINO</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="sub-gest" class="tab-content hidden" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; padding:20px">
             <div class="card">
                 <h3>📂 Categorie</h3>
-                <div style="display:flex; gap:5px">
-                    <input type="text" id="inCat" placeholder="Nuova categoria" style="margin:0">
-                    <button onclick="addCat()">+</button>
-                </div>
+                <div style="display:flex; gap:5px; margin-bottom:15px"><input id="inCat" placeholder="Nuova categoria" style="margin:0"><button onclick="addCat()">+</button></div>
                 <table id="tCats"></table>
             </div>
-
             <div class="card">
                 <h3>📦 Prodotti</h3>
-                <div style="display:grid; grid-template-columns: 1fr 100px; gap:5px">
-                    <input type="text" id="inPN" placeholder="Nome">
-                    <input type="number" id="inPP" placeholder="€">
-                </div>
+                <input id="inPN" placeholder="Nome Prodotto">
+                <input id="inPP" type="number" placeholder="Prezzo 0.00">
                 <select id="selPC"></select>
-                <button onclick="addProd()" style="width:100%">Salva Prodotto</button>
+                <button onclick="addProd()" style="width:100%">Salva nel Listino</button>
                 <table id="tProds"></table>
             </div>
+        </div>
+
+        <div id="sub-repo" class="tab-content hidden" style="padding:20px">
+            <div class="card"><h3>📊 Prossimamente</h3><p>Qui potrai analizzare i tuoi incassi e le statistiche dei prodotti.</p></div>
         </div>
     </div>
 </div>
 
 <script>
     const API = 'http://localhost:8787/api';
-    let currentId = null;
+    let currentId = null, cart = [], allCats = [], allProducts = [], activeCatFilter = 'TUTTI';
 
     function navigate(id) {
         document.querySelectorAll('#app > div').forEach(d => d.classList.add('hidden'));
         document.getElementById(id).classList.remove('hidden');
     }
 
-    // --- AUTH & SELECTION ---
+    function switchTab(tab) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+        document.getElementById('tab-'+tab).classList.add('active');
+        document.getElementById('sub-'+tab).classList.remove('hidden');
+        if(tab !== 'repo') refresh();
+    }
+
+    // --- POS & FILTRI ---
+    function renderPosCategories() {
+        const bar = document.getElementById('pos-cat-bar');
+        const cats = ['TUTTI', ...allCats.map(c => c.nome)];
+        bar.innerHTML = cats.map(c => `<div class="cat-pill ${activeCatFilter === c ? 'active' : ''}" onclick="filterPos('${c}')">${c.toUpperCase()}</div>`).join('');
+    }
+
+    function filterPos(cat) { activeCatFilter = cat; renderPosCategories(); renderPosProducts(); }
+
+    function renderPosProducts() {
+        const grid = document.getElementById('pos-products');
+        const filtered = activeCatFilter === 'TUTTI' ? allProducts : allProducts.filter(p => p.categoria === activeCatFilter);
+        grid.innerHTML = filtered.map(p => `
+            <div class="product-card" onclick='addToCart(${JSON.stringify(p)})'>
+                <small style="color:#64748b">${p.categoria}</small>
+                <strong style="display:block; margin:5px 0">${p.nome}</strong>
+                <b style="color:var(--p)">${parseFloat(p.prezzo).toFixed(2)}€</b>
+            </div>`).join('');
+    }
+
+    function addToCart(p) { cart.push({...p}); renderCart(); }
+    function renderCart() {
+        const list = document.getElementById('cart-list');
+        list.innerHTML = cart.map((item, i) => `
+            <div class="cart-item">
+                <span>${item.nome}</span>
+                <span>${parseFloat(item.prezzo).toFixed(2)}€ <button onclick="cart.splice(${i},1);renderCart()" style="background:none;color:red;padding:0;cursor:pointer">✕</button></span>
+            </div>`).join('');
+        const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0);
+        document.getElementById('cart-sum').innerText = total.toFixed(2);
+    }
+
+    async function processSale() {
+        if(!cart.length) return alert("Carrello vuoto");
+        const res = await fetch(`${API}/vendite?companyId=${currentId}`, { 
+            method: 'POST', 
+            body: JSON.stringify({ items: cart, total: document.getElementById('cart-sum').innerText }) 
+        });
+        if(res.ok) { alert("Scontrino Registrato!"); cart = []; renderCart(); }
+    }
+
+    // --- GESTIONE (EDIT & DELETE) ---
+    function editCatRow(id, old) {
+        document.getElementById(`row-cat-${id}`).innerHTML = `
+            <td><input type="text" id="ec-${id}" value="${old}" style="margin:0"></td>
+            <td style="text-align:right"><button class="btn-save" onclick="saveCatEdit('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">X</button></td>`;
+    }
+    async function saveCatEdit(id) {
+        const nome = document.getElementById(`ec-${id}`).value;
+        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome}) });
+        refresh();
+    }
+
+    function editProdRow(id, n, p, c) {
+        const options = allCats.map(cat => `<option value="${cat.nome}" ${cat.nome === c ? 'selected' : ''}>${cat.nome}</option>`).join('');
+        document.getElementById(`row-prod-${id}`).innerHTML = `
+            <td colspan="2">
+                <input id="en-${id}" value="${n}">
+                <input type="number" id="ep-${id}" value="${p}">
+                <select id="ec-${id}">${options}</select>
+            </td>
+            <td style="text-align:right"><button class="btn-save" onclick="saveProdEdit('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">X</button></td>`;
+    }
+    async function saveProdEdit(id) {
+        const body = { nome: document.getElementById(`en-${id}`).value, prezzo: document.getElementById(`ep-${id}`).value, categoria: document.getElementById(`ec-${id}`).value };
+        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify(body) });
+        refresh();
+    }
+
+    // --- CORE & DATA ---
+    async function refresh() {
+        if(!currentId) return;
+        const [resC, resP] = await Promise.all([
+            fetch(`${API}/categorie?companyId=${currentId}`),
+            fetch(`${API}/prodotti?companyId=${currentId}`)
+        ]);
+        allCats = await resC.json();
+        allProducts = await resP.json();
+
+        // UI Gestione
+        document.getElementById('tCats').innerHTML = allCats.map(c => `<tr id="row-cat-${c._id}"><td>${c.nome}</td><td style="text-align:right"><button class="btn-edit" onclick="editCatRow('${c._id}','${c.nome}')">✏️</button> <button class="btn-red" style="padding:5px 8px" onclick="delItem('categorie','${c._id}')">🗑️</button></td></tr>`).join('');
+        document.getElementById('selPC').innerHTML = allCats.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
+        document.getElementById('tProds').innerHTML = allProducts.map(p => `<tr id="row-prod-${p._id}"><td><strong>${p.nome}</strong><br><small>${p.categoria}</small></td><td>${p.prezzo}€</td><td style="text-align:right"><button class="btn-edit" onclick="editProdRow('${p._id}','${p.nome}',${p.prezzo},'${p.categoria}')">✏️</button> <button class="btn-red" style="padding:5px 8px" onclick="delItem('prodotti','${p._id}')">🗑️</button></td></tr>`).join('');
+        
+        // UI POS
+        renderPosCategories();
+        renderPosProducts();
+    }
+
     async function doLogin() {
         const res = await fetch(`${API}/login`, { method: 'POST', body: JSON.stringify({username: uIn.value, password: pIn.value}) });
         const d = await res.json();
-        if(d.success) { localStorage.setItem('ezUser', JSON.stringify(d.user)); showSelection(); } else alert("Credenziali errate");
+        if(d.success) { localStorage.setItem('ezUser', JSON.stringify(d.user)); showSelection(); } else alert("Errore Login");
     }
 
     async function showSelection() {
@@ -112,126 +241,24 @@
         navigate('view-selection');
         const res = await fetch(`${API}/user/companies?username=${user.username}`);
         const cos = await res.json();
-        document.getElementById('list-companies').innerHTML = cos.map(c => 
-            `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`
-        ).join(' ');
+        document.getElementById('list-companies').innerHTML = cos.map(c => `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`).join(' ');
     }
 
-    async function doCreateCo() {
-        const u = JSON.parse(localStorage.getItem('ezUser'));
-        if(!newCo.value) return;
-        await fetch(`${API}/azienda/crea`, { method: 'POST', body: JSON.stringify({companyName: newCo.value, ownerUsername: u.username}) });
-        newCo.value = ""; showSelection();
+    function openDash(id, name, code) {
+        currentId = id; document.getElementById('activeCoName').innerText = name;
+        document.getElementById('activeCoCode').innerText = "Cod: " + code;
+        navigate('view-dashboard'); switchTab('pos');
     }
 
+    async function addCat() { await fetch(`${API}/categorie?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inCat.value}) }); inCat.value = ""; refresh(); }
+    async function addProd() { await fetch(`${API}/prodotti?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}) }); inPN.value = ""; inPP.value = ""; refresh(); }
+    async function delItem(t, id) { if(confirm("Eliminare?")) { await fetch(`${API}/${t}?id=${id}&companyId=${currentId}`, { method: 'DELETE' }); refresh(); } }
+    async function doCreateCo() { const u = JSON.parse(localStorage.getItem('ezUser')); await fetch(`${API}/azienda/crea`, { method: 'POST', body: JSON.stringify({companyName: newCo.value, ownerUsername: u.username}) }); newCo.value = ""; showSelection(); }
     async function doJoinCo() {
         const u = JSON.parse(localStorage.getItem('ezUser'));
         const res = await fetch(`${API}/azienda/unisciti`, { method: 'POST', body: JSON.stringify({inviteCode: joinCode.value, username: u.username}) });
         if(res.ok) { joinCode.value = ""; showSelection(); } else alert("Codice errato");
     }
-
-    function openDash(id, name, code) {
-        currentId = id;
-        document.getElementById('activeCoName').innerText = name;
-        document.getElementById('activeCoCode').innerText = "CODICE INVITO: " + code;
-        navigate('view-dashboard');
-        refresh();
-    }
-
-    function refresh() { loadCats(); loadProds(); }
-
-    // --- CATEGORIE (EDIT + DELETE) ---
-    async function loadCats() {
-        const res = await fetch(`${API}/categorie?companyId=${currentId}`);
-        const cats = await res.json();
-        document.getElementById('tCats').innerHTML = cats.map(c => `
-            <tr id="row-cat-${c._id}">
-                <td>${c.nome}</td>
-                <td class="actions">
-                    <button class="btn-edit" onclick="editCatRow('${c._id}','${c.nome}')">✏️</button>
-                    <button class="btn-red" onclick="delItem('categorie','${c._id}')">🗑️</button>
-                </td>
-            </tr>`).join('');
-        document.getElementById('selPC').innerHTML = cats.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
-    }
-
-    function editCatRow(id, old) {
-        const row = document.getElementById(`row-cat-${id}`);
-        row.innerHTML = `
-            <td><input type="text" id="ec-${id}" value="${old}" style="margin:0"></td>
-            <td class="actions">
-                <button class="btn-save" onclick="saveCatEdit('${id}')">💾</button>
-                <button class="btn-grey" onclick="loadCats()">X</button>
-            </td>`;
-    }
-
-    async function saveCatEdit(id) {
-        const nome = document.getElementById(`ec-${id}`).value;
-        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome}) });
-        loadCats();
-    }
-
-    async function addCat() {
-        if(!inCat.value) return;
-        await fetch(`${API}/categorie?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inCat.value}) });
-        inCat.value = ""; loadCats();
-    }
-
-    // --- PRODOTTI (EDIT + DELETE) ---
-    async function loadProds() {
-        const res = await fetch(`${API}/prodotti?companyId=${currentId}`);
-        const prods = await res.json();
-        document.getElementById('tProds').innerHTML = prods.map(p => `
-            <tr id="row-prod-${p._id}">
-                <td><strong>${p.nome}</strong><br><small>${p.categoria}</small></td>
-                <td>${p.prezzo}€</td>
-                <td class="actions">
-                    <button class="btn-edit" onclick="editProdRow('${p._id}','${p.nome}',${p.prezzo},'${p.categoria}')">✏️</button>
-                    <button class="btn-red" onclick="delItem('prodotti','${p._id}')">🗑️</button>
-                </td>
-            </tr>`).join('');
-    }
-
-    function editProdRow(id, n, p, c) {
-        const row = document.getElementById(`row-prod-${id}`);
-        const cats = Array.from(document.getElementById('selPC').options).map(o => 
-            `<option value="${o.value}" ${o.value === c ? 'selected' : ''}>${o.value}</option>`
-        ).join('');
-        row.innerHTML = `
-            <td colspan="2">
-                <input type="text" id="en-${id}" value="${n}">
-                <input type="number" id="ep-${id}" value="${p}">
-                <select id="ec-${id}">${cats}</select>
-            </td>
-            <td class="actions">
-                <button class="btn-save" onclick="saveProdEdit('${id}')">💾</button>
-                <button class="btn-grey" onclick="loadProds()">X</button>
-            </td>`;
-    }
-
-    async function saveProdEdit(id) {
-        const body = { 
-            nome: document.getElementById(`en-${id}`).value, 
-            prezzo: document.getElementById(`ep-${id}`).value, 
-            categoria: document.getElementById(`ec-${id}`).value 
-        };
-        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify(body) });
-        loadProds();
-    }
-
-    async function addProd() {
-        if(!inPN.value || !inPP.value) return;
-        await fetch(`${API}/prodotti?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}) });
-        inPN.value = ""; inPP.value = ""; loadProds();
-    }
-
-    async function delItem(type, id) {
-        if(confirm("Eliminare definitivamente?")) {
-            await fetch(`${API}/${type}?id=${id}&companyId=${currentId}`, { method: 'DELETE' });
-            refresh();
-        }
-    }
-
     function doLogout() { localStorage.clear(); location.reload(); }
     if(localStorage.getItem('ezUser')) showSelection();
 </script>
