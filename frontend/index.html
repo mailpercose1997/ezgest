@@ -114,12 +114,23 @@
         <div id="sub-repo" class="tab-content hidden report-grid">
             <div class="card">
                 <h4>Filtri Analisi</h4>
-                <label><small>Dal:</small></label><input type="date" id="repFrom">
-                <label><small>Al:</small></label><input type="date" id="repTo">
-                <button onclick="applyReports()" style="width:100%">Applica</button>
-                <hr style="margin:20px 0; opacity:0.1">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('today')">Oggi</button>
+                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('7d')">7 Giorni</button>
+                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('1m')">1 Mese</button>
+                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('3m')">3 Mesi</button>
+                </div>
+                <label><small>Dal:</small></label><input type="date" id="repFrom" onchange="applyReports()">
+                <label><small>Al:</small></label><input type="date" id="repTo" onchange="applyReports()">
+                
+                <hr style="margin:15px 0; opacity:0.1">
+                <label><small>Filtra Prodotto:</small></label>
+                <select id="repSelP" onchange="applyReports()"></select>
+                
+                <hr style="margin:15px 0; opacity:0.1">
                 <p>Incasso: <b id="stat-total" style="color:var(--s); font-size:1.2rem">0.00€</b></p>
                 <p>Scontrini: <b id="stat-count">0</b></p>
+                <p>Top Prodotto: <br><b id="stat-top" style="color:var(--p)">-</b></p>
             </div>
             <div style="display:flex; flex-direction:column; gap:20px">
                 <div class="card"><h3>📈 Trend Vendite</h3><div class="chart-box"><canvas id="chartTrend"></canvas></div></div>
@@ -175,14 +186,29 @@
         alert("Scontrino Chiuso!"); cart = []; renderCart();
     }
 
-    // --- REPORT ---
+    // --- LOGICA REPORT MODIFICATA ---
     async function loadReports() {
         const res = await fetch(`${API}/vendite?companyId=${currentId}`);
         allSales = await res.json();
+        const pNames = [...new Set(allProducts.map(p => p.nome))];
+        document.getElementById('repSelP').innerHTML = '<option value="TUTTI">Tutti i prodotti</option>' + pNames.map(n => `<option value="${n}">${n}</option>`).join('');
         applyReports();
     }
+
+    function setRange(mode) {
+        const to = new Date();
+        let from = new Date();
+        if(mode === '7d') from.setDate(to.getDate() - 7);
+        else if(mode === '1m') from.setMonth(to.getMonth() - 1);
+        else if(mode === '3m') from.setMonth(to.getMonth() - 3);
+        else if(mode === 'today') from = new Date();
+        document.getElementById('repFrom').value = from.toISOString().split('T')[0];
+        document.getElementById('repTo').value = to.toISOString().split('T')[0];
+        applyReports();
+    }
+
     function applyReports() {
-        const from = document.getElementById('repFrom').value, to = document.getElementById('repTo').value;
+        const from = document.getElementById('repFrom').value, to = document.getElementById('repTo').value, selP = document.getElementById('repSelP').value;
         let filtered = allSales.filter(s => {
             const d = new Date(s.createdAt).toISOString().split('T')[0];
             return (!from || d >= from) && (!to || d <= to);
@@ -190,27 +216,35 @@
 
         let total = 0, trend = {}, hours = Array(24).fill(0), cats = {}, prods = {};
         filtered.forEach(s => {
-            total += parseFloat(s.total);
-            const date = new Date(s.createdAt);
-            const day = date.toISOString().split('T')[0];
-            trend[day] = (trend[day] || 0) + parseFloat(s.total);
-            hours[date.getHours()]++;
+            let sTotal = 0; let validSale = false;
             s.items.forEach(i => {
-                cats[i.categoria] = (cats[i.categoria] || 0) + parseFloat(i.prezzo);
-                if(!prods[i.nome]) prods[i.nome] = { q: 0, t: 0 };
-                prods[i.nome].q++; prods[i.nome].t += parseFloat(i.prezzo);
+                if(selP === 'TUTTI' || i.nome === selP) {
+                    validSale = true;
+                    const val = parseFloat(i.prezzo);
+                    sTotal += val;
+                    cats[i.categoria] = (cats[i.categoria] || 0) + val;
+                    if(!prods[i.nome]) prods[i.nome] = { q: 0, t: 0 };
+                    prods[i.nome].q++; prods[i.nome].t += val;
+                }
             });
+            if(validSale) {
+                total += sTotal;
+                const date = new Date(s.createdAt);
+                const day = date.toLocaleDateString('it-IT', {day:'2-digit', month:'short'});
+                trend[day] = (trend[day] || 0) + sTotal;
+                hours[date.getHours()]++;
+            }
         });
 
         document.getElementById('stat-total').innerText = total.toFixed(2) + "€";
-        document.getElementById('stat-count').innerText = filtered.length;
+        document.getElementById('stat-count').innerText = Object.values(hours).reduce((a,b)=>a+b, 0);
+        const sortedProds = Object.entries(prods).sort((a,b) => b[1].q - a[1].q);
+        document.getElementById('stat-top').innerText = sortedProds[0] ? `${sortedProds[0][0]} (${sortedProds[0][1].q} pz)` : "-";
         
-        // Update Charts
-        updateChart('chartTrend', 'line', Object.keys(trend).sort(), Object.values(trend), 'Fatturato');
-        updateChart('chartHour', 'bar', Array.from({length:24},(_,i)=>i+":00"), hours, 'Afflusso', '#10b981');
-        updateChart('chartCat', 'doughnut', Object.keys(cats), Object.values(cats), 'Categorie');
-        
-        document.querySelector('#tTopProds tbody').innerHTML = Object.entries(prods).sort((a,b)=>b[1].t-a[1].t).slice(0,5).map(([n, d]) => `<tr><td>${n}</td><td>${d.q}</td><td>${d.t.toFixed(2)}€</td></tr>`).join('');
+        updateChart('chartTrend', 'line', Object.keys(trend), Object.values(trend), 'Fatturato €');
+        updateChart('chartHour', 'bar', Array.from({length:24},(_,i)=>i+":00"), hours, 'Scontrini', '#10b981');
+        updateChart('chartCat', 'doughnut', Object.keys(cats), Object.values(cats), 'Mix Categorie');
+        document.querySelector('#tTopProds tbody').innerHTML = sortedProds.slice(0,5).map(([n, d]) => `<tr><td>${n}</td><td>${d.q}</td><td>${d.t.toFixed(2)}€</td></tr>`).join('');
     }
 
     function updateChart(id, type, labels, data, label, color = '#2563eb') {
