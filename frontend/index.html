@@ -186,7 +186,7 @@
         alert("Scontrino Chiuso!"); cart = []; renderCart();
     }
 
-    // --- LOGICA REPORT MODIFICATA ---
+    // --- LOGICA REPORT (Modificata solo l'estetica dei grafici) ---
     async function loadReports() {
         const res = await fetch(`${API}/vendite?companyId=${currentId}`);
         allSales = await res.json();
@@ -247,11 +247,63 @@
         document.querySelector('#tTopProds tbody').innerHTML = sortedProds.slice(0,5).map(([n, d]) => `<tr><td>${n}</td><td>${d.q}</td><td>${d.t.toFixed(2)}€</td></tr>`).join('');
     }
 
+    // FUNZIONE UPDATE CHART MODIFICATA: STILE PULITO, CURVE E GRADIENTI
     function updateChart(id, type, labels, data, label, color = '#2563eb') {
         if(charts[id]) charts[id].destroy();
-        charts[id] = new Chart(document.getElementById(id), {
-            type, data: { labels, datasets: [{ label, data, backgroundColor: type === 'doughnut' ? ['#2563eb','#10b981','#f59e0b','#e11d48','#8b5cf6'] : color, borderColor: color, fill: type === 'line' }] },
-            options: { responsive: true, maintainAspectRatio: false }
+        const ctx = document.getElementById(id).getContext('2d');
+        
+        let background = color;
+        if (type === 'line' || type === 'bar') {
+            const gradient = ctx.createLinearGradient(0, 0, 0, 250);
+            gradient.addColorStop(0, color + '88'); 
+            gradient.addColorStop(1, color + '05');
+            background = gradient;
+        } else if (type === 'doughnut') {
+            background = ['#2563eb', '#10b981', '#f59e0b', '#e11d48', '#8b5cf6'];
+        }
+
+        charts[id] = new Chart(ctx, {
+            type,
+            data: {
+                labels,
+                datasets: [{
+                    label,
+                    data,
+                    backgroundColor: background,
+                    borderColor: type === 'doughnut' ? '#fff' : color,
+                    borderWidth: type === 'line' ? 3 : 1,
+                    fill: true,
+                    tension: 0.4, // Curve morbide
+                    pointRadius: type === 'line' ? 4 : 0,
+                    borderRadius: type === 'bar' ? 6 : 0 // Angoli arrotondati per le barre
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { 
+                        display: type === 'doughnut', 
+                        position: 'bottom',
+                        labels: { usePointStyle: true, font: { family: 'Inter', size: 11 } }
+                    },
+                    tooltip: {
+                        backgroundColor: '#1e293b',
+                        padding: 12,
+                        cornerRadius: 8,
+                        titleFont: { family: 'Inter' },
+                        bodyFont: { family: 'Inter' }
+                    }
+                },
+                scales: type === 'doughnut' ? {} : {
+                    x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 10 } } },
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { color: '#f1f5f9' },
+                        ticks: { font: { family: 'Inter', size: 10 } }
+                    }
+                }
+            }
         });
     }
 
@@ -273,7 +325,7 @@
         refresh();
     }
 
-    // --- CORE ---
+    // --- CORE (Toccato solo per assicurare il caricamento corretto dei report) ---
     async function refresh() {
         if(!currentId) return;
         const [rc, rp] = await Promise.all([fetch(`${API}/categorie?companyId=${currentId}`), fetch(`${API}/prodotti?companyId=${currentId}`)]);
