@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EzGest SaaS - POS & Analytics</title>
+    <title>EzGest SaaS - Professional Analytics</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --p: #2563eb; --d: #e11d48; --s: #10b981; --bg: #f8fafc; --text: #1e293b; }
@@ -33,7 +33,7 @@
 
         /* Report UI */
         .report-grid { display: grid; grid-template-columns: 280px 1fr; gap: 20px; padding: 20px; }
-        .chart-box { position: relative; height: 250px; }
+        .chart-box { position: relative; height: 300px; }
 
         /* Common */
         button { cursor: pointer; padding: 10px 15px; border-radius: 8px; border: none; font-weight: 600; color: white; background: var(--p); }
@@ -124,6 +124,9 @@
                 <label><small>Al:</small></label><input type="date" id="repTo" onchange="applyReports()">
                 
                 <hr style="margin:15px 0; opacity:0.1">
+                <label><small>Filtra Categoria:</small></label>
+                <select id="repSelC" onchange="updateProductFilter()"></select>
+
                 <label><small>Filtra Prodotto:</small></label>
                 <select id="repSelP" onchange="applyReports()"></select>
                 
@@ -136,10 +139,10 @@
                 <div class="card"><h3>📈 Trend Vendite</h3><div class="chart-box"><canvas id="chartTrend"></canvas></div></div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px">
                     <div class="card"><h3>🕒 Heatmap Oraria</h3><div class="chart-box"><canvas id="chartHour"></canvas></div></div>
-                    <div class="card"><h3>🏷️ Per Categoria</h3><div class="chart-box"><canvas id="chartCat"></canvas></div></div>
+                    <div class="card"><h3>🏷️ Distribuzione</h3><div class="chart-box"><canvas id="chartCat"></canvas></div></div>
                 </div>
                 <div class="card">
-                    <h3>🏆 Top 5 Prodotti</h3>
+                    <h3>🏆 Classifica Prodotti</h3>
                     <table id="tTopProds"><thead><tr><th>Prodotto</th><th>Quantità</th><th>Ricavo</th></tr></thead><tbody></tbody></table>
                 </div>
             </div>
@@ -150,6 +153,7 @@
 <script>
     const API = 'http://localhost:8787/api';
     let currentId = null, cart = [], allCats = [], allProducts = [], allSales = [], activeCatFilter = 'TUTTI', charts = {};
+    const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#e11d48', '#8b5cf6', '#06b6d4', '#f43f5e', '#ec4899'];
 
     function navigate(id) {
         document.querySelectorAll('#app > div').forEach(d => d.classList.add('hidden'));
@@ -164,7 +168,7 @@
         if(tab === 'repo') loadReports(); else refresh();
     }
 
-    // --- POS ---
+    // --- POS & CORE (Invariati) ---
     function filterPos(cat) { activeCatFilter = cat; renderPosCategories(); renderPosProducts(); }
     function renderPosCategories() {
         const cats = ['TUTTI', ...allCats.map(c => c.nome)];
@@ -176,7 +180,7 @@
     }
     function addToCart(p) { cart.push({...p}); renderCart(); }
     function renderCart() {
-        document.getElementById('cart-list').innerHTML = cart.map((item, i) => `<div class="cart-item"><span>${item.nome}</span><span>${parseFloat(item.prezzo).toFixed(2)}€ <button onclick="cart.splice(${i},1);renderCart()" style="background:none;color:red;padding:0">✕</button></span></div>`).join('');
+        document.getElementById('cart-list').innerHTML = cart.map((item, i) => `<div class="cart-item"><span>${item.nome}</span><span>${parseFloat(item.prezzo).toFixed(2)}€ <button onclick="cart.splice(${i},1);renderCart()" style="background:none;color:red;padding:0;cursor:pointer">✕</button></span></div>`).join('');
         const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0);
         document.getElementById('cart-sum').innerText = total.toFixed(2);
     }
@@ -186,18 +190,25 @@
         alert("Scontrino Chiuso!"); cart = []; renderCart();
     }
 
-    // --- LOGICA REPORT (Modificata solo l'estetica dei grafici) ---
+    // --- REPORT CON ORDINAMENTO CRONOLOGICO COMPLETO ---
     async function loadReports() {
         const res = await fetch(`${API}/vendite?companyId=${currentId}`);
         allSales = await res.json();
-        const pNames = [...new Set(allProducts.map(p => p.nome))];
+        const cNames = [...new Set(allCats.map(c => c.nome))];
+        document.getElementById('repSelC').innerHTML = '<option value="TUTTI">Tutte le categorie</option>' + cNames.map(n => `<option value="${n}">${n}</option>`).join('');
+        updateProductFilter();
+    }
+
+    function updateProductFilter() {
+        const selC = document.getElementById('repSelC').value;
+        const filteredProducts = selC === 'TUTTI' ? allProducts : allProducts.filter(p => p.categoria === selC);
+        const pNames = [...new Set(filteredProducts.map(p => p.nome))];
         document.getElementById('repSelP').innerHTML = '<option value="TUTTI">Tutti i prodotti</option>' + pNames.map(n => `<option value="${n}">${n}</option>`).join('');
         applyReports();
     }
 
     function setRange(mode) {
-        const to = new Date();
-        let from = new Date();
+        const to = new Date(); let from = new Date();
         if(mode === '7d') from.setDate(to.getDate() - 7);
         else if(mode === '1m') from.setMonth(to.getMonth() - 1);
         else if(mode === '3m') from.setMonth(to.getMonth() - 3);
@@ -208,124 +219,108 @@
     }
 
     function applyReports() {
-        const from = document.getElementById('repFrom').value, to = document.getElementById('repTo').value, selP = document.getElementById('repSelP').value;
+        const from = document.getElementById('repFrom').value, to = document.getElementById('repTo').value, 
+              selC = document.getElementById('repSelC').value, selP = document.getElementById('repSelP').value;
+        
         let filtered = allSales.filter(s => {
             const d = new Date(s.createdAt).toISOString().split('T')[0];
             return (!from || d >= from) && (!to || d <= to);
         });
 
-        let total = 0, trend = {}, hours = Array(24).fill(0), cats = {}, prods = {};
+        let total = 0, hours = Array(24).fill(0), catsMap = {}, prodsMap = {}, dailyTotal = {}, dailyProdSplit = {};
+        let allDatesSet = new Set();
+
         filtered.forEach(s => {
-            let sTotal = 0; let validSale = false;
+            let sTotal = 0; let saleValid = false;
+            // USO ISO DATE PER ORDINAMENTO SICURO (YYYY-MM-DD)
+            const dateKey = new Date(s.createdAt).toISOString().split('T')[0];
+
             s.items.forEach(i => {
-                if(selP === 'TUTTI' || i.nome === selP) {
-                    validSale = true;
-                    const val = parseFloat(i.prezzo);
-                    sTotal += val;
-                    cats[i.categoria] = (cats[i.categoria] || 0) + val;
-                    if(!prods[i.nome]) prods[i.nome] = { q: 0, t: 0 };
-                    prods[i.nome].q++; prods[i.nome].t += val;
+                const matchC = (selC === 'TUTTI' || i.categoria === selC);
+                const matchP = (selP === 'TUTTI' || i.nome === selP);
+                if(matchC && matchP) {
+                    saleValid = true; const val = parseFloat(i.prezzo); sTotal += val;
+                    allDatesSet.add(dateKey);
+                    catsMap[i.categoria] = (catsMap[i.categoria] || 0) + val;
+                    if(!prodsMap[i.nome]) prodsMap[i.nome] = { q: 0, t: 0 };
+                    prodsMap[i.nome].q++; prodsMap[i.nome].t += val;
+                    if(!dailyProdSplit[i.nome]) dailyProdSplit[i.nome] = {};
+                    dailyProdSplit[i.nome][dateKey] = (dailyProdSplit[i.nome][dateKey] || 0) + val;
                 }
             });
-            if(validSale) {
+
+            if(saleValid) {
                 total += sTotal;
-                const date = new Date(s.createdAt);
-                const day = date.toLocaleDateString('it-IT', {day:'2-digit', month:'short'});
-                trend[day] = (trend[day] || 0) + sTotal;
-                hours[date.getHours()]++;
+                dailyTotal[dateKey] = (dailyTotal[dateKey] || 0) + sTotal;
+                hours[new Date(s.createdAt).getHours()]++;
             }
         });
+
+        // ORDINAMENTO CRONOLOGICO (Dalla più vecchia alla più recente)
+        const sortedDates = Array.from(allDatesSet).sort();
+        
+        // ETICHETTE LEGGIBILI PER IL GRAFICO (es. 05 feb)
+        const labels = sortedDates.map(d => new Date(d).toLocaleDateString('it-IT', {day:'2-digit', month:'short'}));
+
+        let trendDatasets = [];
+        if (selC !== 'TUTTI' && selP === 'TUTTI') {
+            Object.keys(dailyProdSplit).forEach((pName, idx) => {
+                trendDatasets.push({
+                    label: pName,
+                    data: sortedDates.map(d => dailyProdSplit[pName][d] || 0),
+                    borderColor: COLORS[idx % COLORS.length],
+                    backgroundColor: COLORS[idx % COLORS.length] + '22',
+                    fill: false, tension: 0.4
+                });
+            });
+        } else {
+            trendDatasets.push({
+                label: selP === 'TUTTI' ? 'Fatturato Totale' : selP,
+                data: sortedDates.map(d => dailyTotal[d] || 0),
+                borderColor: COLORS[0],
+                backgroundColor: COLORS[0] + '22',
+                fill: true, tension: 0.4
+            });
+        }
 
         document.getElementById('stat-total').innerText = total.toFixed(2) + "€";
         document.getElementById('stat-count').innerText = Object.values(hours).reduce((a,b)=>a+b, 0);
-        const sortedProds = Object.entries(prods).sort((a,b) => b[1].q - a[1].q);
+        const sortedProds = Object.entries(prodsMap).sort((a,b) => b[1].q - a[1].q);
         document.getElementById('stat-top').innerText = sortedProds[0] ? `${sortedProds[0][0]} (${sortedProds[0][1].q} pz)` : "-";
         
-        updateChart('chartTrend', 'line', Object.keys(trend), Object.values(trend), 'Fatturato €');
+        updateMultiChart('chartTrend', 'line', labels, trendDatasets);
         updateChart('chartHour', 'bar', Array.from({length:24},(_,i)=>i+":00"), hours, 'Scontrini', '#10b981');
-        updateChart('chartCat', 'doughnut', Object.keys(cats), Object.values(cats), 'Mix Categorie');
+
+        let pL, pD, pT;
+        if(selC === 'TUTTI') { pL = Object.keys(catsMap); pD = Object.values(catsMap); pT = 'Mix Categorie'; }
+        else { pL = Object.keys(prodsMap); pD = Object.values(prodsMap).map(x => x.t); pT = `Prodotti in ${selC}`; }
+        updateChart('chartCat', 'doughnut', pL, pD, pT);
+
         document.querySelector('#tTopProds tbody').innerHTML = sortedProds.slice(0,5).map(([n, d]) => `<tr><td>${n}</td><td>${d.q}</td><td>${d.t.toFixed(2)}€</td></tr>`).join('');
     }
 
-    // FUNZIONE UPDATE CHART MODIFICATA: STILE PULITO, CURVE E GRADIENTI
-    function updateChart(id, type, labels, data, label, color = '#2563eb') {
+    function updateMultiChart(id, type, labels, datasets) {
         if(charts[id]) charts[id].destroy();
-        const ctx = document.getElementById(id).getContext('2d');
-        
-        let background = color;
-        if (type === 'line' || type === 'bar') {
-            const gradient = ctx.createLinearGradient(0, 0, 0, 250);
-            gradient.addColorStop(0, color + '88'); 
-            gradient.addColorStop(1, color + '05');
-            background = gradient;
-        } else if (type === 'doughnut') {
-            background = ['#2563eb', '#10b981', '#f59e0b', '#e11d48', '#8b5cf6'];
-        }
-
-        charts[id] = new Chart(ctx, {
-            type,
-            data: {
-                labels,
-                datasets: [{
-                    label,
-                    data,
-                    backgroundColor: background,
-                    borderColor: type === 'doughnut' ? '#fff' : color,
-                    borderWidth: type === 'line' ? 3 : 1,
-                    fill: true,
-                    tension: 0.4, // Curve morbide
-                    pointRadius: type === 'line' ? 4 : 0,
-                    borderRadius: type === 'bar' ? 6 : 0 // Angoli arrotondati per le barre
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { 
-                        display: type === 'doughnut', 
-                        position: 'bottom',
-                        labels: { usePointStyle: true, font: { family: 'Inter', size: 11 } }
-                    },
-                    tooltip: {
-                        backgroundColor: '#1e293b',
-                        padding: 12,
-                        cornerRadius: 8,
-                        titleFont: { family: 'Inter' },
-                        bodyFont: { family: 'Inter' }
-                    }
-                },
-                scales: type === 'doughnut' ? {} : {
-                    x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 10 } } },
-                    y: { 
-                        beginAtZero: true, 
-                        grid: { color: '#f1f5f9' },
-                        ticks: { font: { family: 'Inter', size: 10 } }
-                    }
-                }
-            }
+        charts[id] = new Chart(document.getElementById(id), {
+            type, data: { labels, datasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'top', labels: { usePointStyle: true, boxWidth: 6, font:{family:'Inter'} } } }, scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } }
         });
     }
 
-    // --- GESTIONE ---
-    function editCatRow(id, old) {
-        document.getElementById(`row-cat-${id}`).innerHTML = `<td><input id="ec-${id}" value="${old}" style="margin:0"></td><td style="text-align:right"><button class="btn-save" onclick="saveCatEdit('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">X</button></td>`;
-    }
-    async function saveCatEdit(id) {
-        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`ec-${id}`).value}) });
-        refresh();
-    }
-    function editProdRow(id, n, p, c) {
-        const opts = allCats.map(cat => `<option value="${cat.nome}" ${cat.nome === c ? 'selected' : ''}>${cat.nome}</option>`).join('');
-        document.getElementById(`row-prod-${id}`).innerHTML = `<td colspan="2"><input id="en-${id}" value="${n}"><input type="number" id="ep-${id}" value="${p}"><select id="ec-${id}">${opts}</select></td><td style="text-align:right"><button class="btn-save" onclick="saveProdEdit('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">X</button></td>`;
-    }
-    async function saveProdEdit(id) {
-        const body = { nome: document.getElementById(`en-${id}`).value, prezzo: document.getElementById(`ep-${id}`).value, categoria: document.getElementById(`ec-${id}`).value };
-        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify(body) });
-        refresh();
+    function updateChart(id, type, labels, data, label, color = '#2563eb') {
+        if(charts[id]) charts[id].destroy();
+        const ctx = document.getElementById(id).getContext('2d');
+        let background = color;
+        if (type === 'bar') {
+            const g = ctx.createLinearGradient(0, 0, 0, 250); g.addColorStop(0, color + 'cc'); g.addColorStop(1, color + '22'); background = g;
+        } else if (type === 'doughnut') { background = COLORS; }
+        charts[id] = new Chart(ctx, {
+            type, data: { labels, datasets: [{ label, data, backgroundColor: background, borderColor: type === 'doughnut' ? '#fff' : color, borderWidth: 1, borderRadius: 5 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: type === 'doughnut', position: 'bottom' } }, scales: type === 'doughnut' ? {} : { y: { beginAtZero: true }, x: { grid: { display: false } } } }
+        });
     }
 
-    // --- CORE (Toccato solo per assicurare il caricamento corretto dei report) ---
+    // --- REFRESH & LOGIN ---
     async function refresh() {
         if(!currentId) return;
         const [rc, rp] = await Promise.all([fetch(`${API}/categorie?companyId=${currentId}`), fetch(`${API}/prodotti?companyId=${currentId}`)]);
@@ -341,8 +336,7 @@
     }
     async function showSelection() {
         const user = JSON.parse(localStorage.getItem('ezUser'));
-        if(!user) return navigate('view-login');
-        navigate('view-selection');
+        if(!user) return navigate('view-login'); navigate('view-selection');
         const res = await fetch(`${API}/user/companies?username=${user.username}`);
         const cos = await res.json();
         document.getElementById('list-companies').innerHTML = cos.map(c => `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`).join(' ');
