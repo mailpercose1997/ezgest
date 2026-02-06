@@ -17,7 +17,7 @@ export default {
       const db = client.db("EzGest");
       const resJson = (d) => new Response(JSON.stringify(d), { headers: corsHeaders });
 
-      // --- LOGIN & AZIENDE ---
+      // --- AUTH & AZIENDE ---
       if (url.pathname === "/api/login" && request.method === "POST") {
         const { username, password } = await request.json();
         const user = await db.collection("users").findOne({ username, password });
@@ -37,15 +37,26 @@ export default {
       if (url.pathname === "/api/azienda/crea" && request.method === "POST") {
         const { companyName, ownerUsername } = await request.json();
         const result = await db.collection("companies").insertOne({ 
-          name: companyName, inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(), owner: ownerUsername 
+          name: companyName, 
+          inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(), 
+          owner: ownerUsername 
         });
         await db.collection("users").updateOne({ username: ownerUsername }, { $addToSet: { companies: result.insertedId.toString() } });
         return resJson({ success: true });
       }
 
-      // --- CATEGORIE & PRODOTTI ---
+      if (url.pathname === "/api/azienda/unisciti" && request.method === "POST") {
+        const { inviteCode, username } = await request.json();
+        const co = await db.collection("companies").findOne({ inviteCode });
+        if(!co) return new Response("Codice Errato", { status: 400, headers: corsHeaders });
+        await db.collection("users").updateOne({ username }, { $addToSet: { companies: co._id.toString() } });
+        return resJson({ success: true });
+      }
+
+      // --- LOGICA CORE (Richiedono companyId) ---
       const companyId = url.searchParams.get("companyId");
-      
+      const id = url.searchParams.get("id");
+
       if (url.pathname === "/api/categorie") {
         if (request.method === "GET") return resJson(await db.collection("categories").find({ companyId }).toArray());
         if (request.method === "POST") {
@@ -53,8 +64,13 @@ export default {
           await db.collection("categories").insertOne({ ...body, companyId });
           return resJson({ success: true });
         }
+        if (request.method === "PUT") {
+          const { nome } = await request.json();
+          await db.collection("categories").updateOne({ _id: new ObjectId(id) }, { $set: { nome } });
+          return resJson({ success: true });
+        }
         if (request.method === "DELETE") {
-          await db.collection("categories").deleteOne({ _id: new ObjectId(url.searchParams.get("id")) });
+          await db.collection("categories").deleteOne({ _id: new ObjectId(id) });
           return resJson({ success: true });
         }
       }
@@ -66,26 +82,30 @@ export default {
           await db.collection("products").insertOne({ ...body, companyId });
           return resJson({ success: true });
         }
+        if (request.method === "PUT") {
+          const data = await request.json();
+          delete data._id;
+          await db.collection("products").updateOne({ _id: new ObjectId(id) }, { $set: data });
+          return resJson({ success: true });
+        }
         if (request.method === "DELETE") {
-          await db.collection("products").deleteOne({ _id: new ObjectId(url.searchParams.get("id")) });
+          await db.collection("products").deleteOne({ _id: new ObjectId(id) });
           return resJson({ success: true });
         }
       }
 
-      // --- VENDITE (NUOVO) ---
-      if (url.pathname === "/api/vendite" && request.method === "POST") {
-        const saleData = await request.json();
-        await db.collection("sales").insertOne({ 
-          ...saleData, 
-          companyId, 
-          createdAt: new Date() 
-        });
-        return resJson({ success: true });
+      if (url.pathname === "/api/vendite") {
+        if (request.method === "GET") return resJson(await db.collection("sales").find({ companyId }).sort({ createdAt: -1 }).toArray());
+        if (request.method === "POST") {
+          const body = await request.json();
+          await db.collection("sales").insertOne({ ...body, companyId, createdAt: new Date() });
+          return resJson({ success: true });
+        }
       }
 
       return new Response("Not Found", { status: 404 });
     } catch (e) {
-      return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+      return new Response(e.message, { status: 500, headers: corsHeaders });
     } finally {
       await client.close();
     }
