@@ -455,6 +455,23 @@
     async function addCat() { await fetch(`${API}/categorie?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inCat.value}) }); inCat.value = ""; refresh(); }
     async function addProd() { await fetch(`${API}/prodotti?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}) }); inPN.value = ""; inPP.value = ""; refresh(); }
     async function delItem(t, id) { if(confirm("Eliminare?")) { await fetch(`${API}/${t}?id=${id}&companyId=${currentId}`, { method: 'DELETE' }); refresh(); } }
+    
+    function editCatRow(id, name) {
+        const row = document.getElementById(`row-cat-${id}`);
+        row.innerHTML = `<td><input id="e-cn-${id}" value="${name}"></td><td style="text-align:right"><button class="btn-save" onclick="saveCat('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
+    }
+    async function saveCat(id) {
+        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-cn-${id}`).value}) }); refresh();
+    }
+    function editProdRow(id, name, price, cat) {
+        const row = document.getElementById(`row-prod-${id}`);
+        const opts = allCats.map(c => `<option value="${c.nome}" ${c.nome===cat?'selected':''}>${c.nome}</option>`).join('');
+        row.innerHTML = `<td><input id="e-pn-${id}" value="${name}" style="margin-bottom:5px"><select id="e-pc-${id}">${opts}</select></td><td><input id="e-pp-${id}" value="${price}" type="number" style="width:70px">€</td><td style="text-align:right"><button class="btn-save" onclick="saveProd('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
+    }
+    async function saveProd(id) {
+        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-pn-${id}`).value, prezzo: document.getElementById(`e-pp-${id}`).value, categoria: document.getElementById(`e-pc-${id}`).value}) }); refresh();
+    }
+
     async function doCreateCo() { const u = JSON.parse(localStorage.getItem('ezUser')); await fetch(`${API}/azienda/crea`, { method: 'POST', body: JSON.stringify({companyName: newCo.value, ownerUsername: u.username}) }); newCo.value = ""; showSelection(); }
     async function doJoinCo() { const u = JSON.parse(localStorage.getItem('ezUser')); const res = await fetch(`${API}/azienda/unisciti`, { method: 'POST', body: JSON.stringify({inviteCode: joinCode.value, username: u.username}) }); if(res.ok) { joinCode.value = ""; showSelection(); } else alert("Codice errato"); }
     function doLogout() { localStorage.clear(); location.reload(); }
