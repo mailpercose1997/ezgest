@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>EzGest SaaS - Professional Analytics</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
@@ -140,10 +140,21 @@
             #report-filters-body.open { display: block; }
             .filter-toggle-icon { display: block; transform: rotate(0deg); transition: transform 0.3s; font-size: 1.2rem; color: var(--p); }
             .filter-toggle-icon.open { transform: rotate(180deg); }
+
+            /* Toast Notification Mobile Position */
+            #toast-container { bottom: 80px; left: 20px; right: 20px; transform: none; max-width: none; }
         }
+        
+        /* Toast Notifications */
+        #toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: #334155; color: white; padding: 12px 24px; border-radius: 50px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 14px; font-weight: 500; opacity: 0; transform: translateY(20px); transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55); display: flex; align-items: center; gap: 10px; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { background: #059669; }
+        .toast.error { background: #e11d48; }
     </style>
 </head>
 <body>
+<div id="toast-container"></div>
 
 <div id="app">
     <div id="view-login" class="card" style="max-width: 350px; margin: 100px auto; text-align: center;">
@@ -295,9 +306,9 @@
         if(document.getElementById('cart-count-badge')) document.getElementById('cart-count-badge').innerText = `(${cart.length})`;
     }
     async function processSale() {
-        if(!cart.length) return alert("Carrello vuoto");
+        if(!cart.length) return showToast("Il carrello è vuoto", "error");
         await fetch(`${API}/vendite?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({ items: cart, total: document.getElementById('cart-sum').innerText }) });
-        alert("Scontrino Chiuso!"); cart = []; renderCart();
+        showToast("Scontrino Chiuso!", "success"); cart = []; renderCart(); toggleCart();
     }
 
     // --- REPORT CON ORDINAMENTO CRONOLOGICO COMPLETO ---
@@ -442,7 +453,7 @@
     }
     async function doLogin() {
         const res = await fetch(`${API}/login`, { method: 'POST', body: JSON.stringify({username: uIn.value, password: pIn.value}) });
-        const d = await res.json(); if(d.success) { localStorage.setItem('ezUser', JSON.stringify(d.user)); showSelection(); } else alert("Errore");
+        const d = await res.json(); if(d.success) { localStorage.setItem('ezUser', JSON.stringify(d.user)); showSelection(); } else showToast("Credenziali errate", "error");
     }
     async function showSelection() {
         const user = JSON.parse(localStorage.getItem('ezUser'));
@@ -452,16 +463,28 @@
         document.getElementById('list-companies').innerHTML = cos.map(c => `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`).join(' ');
     }
     function openDash(id, name, code) { currentId = id; document.getElementById('activeCoName').innerText = name; document.getElementById('activeCoCode').innerText = "Cod: "+code; navigate('view-dashboard'); switchTab('pos'); }
-    async function addCat() { await fetch(`${API}/categorie?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inCat.value}) }); inCat.value = ""; refresh(); }
-    async function addProd() { await fetch(`${API}/prodotti?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}) }); inPN.value = ""; inPP.value = ""; refresh(); }
-    async function delItem(t, id) { if(confirm("Eliminare?")) { await fetch(`${API}/${t}?id=${id}&companyId=${currentId}`, { method: 'DELETE' }); refresh(); } }
+    
+    // Toast Logic
+    function showToast(msg, type = 'neutral') {
+        const c = document.getElementById('toast-container');
+        const t = document.createElement('div');
+        t.className = `toast ${type}`;
+        t.innerHTML = type === 'success' ? '✅ '+msg : (type === 'error' ? '⚠️ '+msg : msg);
+        c.appendChild(t);
+        setTimeout(() => t.classList.add('show'), 10);
+        setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
+    }
+
+    async function addCat() { await fetch(`${API}/categorie?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inCat.value}) }); inCat.value = ""; refresh(); showToast('Categoria aggiunta', 'success'); }
+    async function addProd() { await fetch(`${API}/prodotti?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}) }); inPN.value = ""; inPP.value = ""; refresh(); showToast('Prodotto aggiunto', 'success'); }
+    async function delItem(t, id) { if(confirm("Eliminare?")) { await fetch(`${API}/${t}?id=${id}&companyId=${currentId}`, { method: 'DELETE' }); refresh(); showToast('Elemento eliminato'); } }
     
     function editCatRow(id, name) {
         const row = document.getElementById(`row-cat-${id}`);
         row.innerHTML = `<td><input id="e-cn-${id}" value="${name}"></td><td style="text-align:right"><button class="btn-save" onclick="saveCat('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
     }
     async function saveCat(id) {
-        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-cn-${id}`).value}) }); refresh();
+        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-cn-${id}`).value}) }); refresh(); showToast('Categoria modificata', 'success');
     }
     function editProdRow(id, name, price, cat) {
         const row = document.getElementById(`row-prod-${id}`);
@@ -469,11 +492,11 @@
         row.innerHTML = `<td><input id="e-pn-${id}" value="${name}" style="margin-bottom:5px"><select id="e-pc-${id}">${opts}</select></td><td><input id="e-pp-${id}" value="${price}" type="number" style="width:70px">€</td><td style="text-align:right"><button class="btn-save" onclick="saveProd('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
     }
     async function saveProd(id) {
-        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-pn-${id}`).value, prezzo: document.getElementById(`e-pp-${id}`).value, categoria: document.getElementById(`e-pc-${id}`).value}) }); refresh();
+        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-pn-${id}`).value, prezzo: document.getElementById(`e-pp-${id}`).value, categoria: document.getElementById(`e-pc-${id}`).value}) }); refresh(); showToast('Prodotto salvato', 'success');
     }
 
     async function doCreateCo() { const u = JSON.parse(localStorage.getItem('ezUser')); await fetch(`${API}/azienda/crea`, { method: 'POST', body: JSON.stringify({companyName: newCo.value, ownerUsername: u.username}) }); newCo.value = ""; showSelection(); }
-    async function doJoinCo() { const u = JSON.parse(localStorage.getItem('ezUser')); const res = await fetch(`${API}/azienda/unisciti`, { method: 'POST', body: JSON.stringify({inviteCode: joinCode.value, username: u.username}) }); if(res.ok) { joinCode.value = ""; showSelection(); } else alert("Codice errato"); }
+    async function doJoinCo() { const u = JSON.parse(localStorage.getItem('ezUser')); const res = await fetch(`${API}/azienda/unisciti`, { method: 'POST', body: JSON.stringify({inviteCode: joinCode.value, username: u.username}) }); if(res.ok) { joinCode.value = ""; showSelection(); } else showToast("Codice invito errato", "error"); }
     function doLogout() { localStorage.clear(); location.reload(); }
     if(localStorage.getItem('ezUser')) showSelection();
 
