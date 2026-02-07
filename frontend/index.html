@@ -216,22 +216,10 @@
 
         <div id="sub-repo" class="tab-content hidden report-grid">
             <div class="card">
-                <h4>Filtri Analisi</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
-                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('today')">Oggi</button>
-                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('7d')">7 Giorni</button>
-                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('1m')">1 Mese</button>
-                    <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('3m')">3 Mesi</button>
                 <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer" onclick="toggleReportFilters()">
                     <h4 style="margin:0">Filtri Analisi</h4>
                     <span class="filter-toggle-icon">▼</span>
                 </div>
-                <label><small>Dal:</small></label><input type="date" id="repFrom" onchange="applyReports()">
-                <label><small>Al:</small></label><input type="date" id="repTo" onchange="applyReports()">
-                
-                <hr style="margin:15px 0; opacity:0.1">
-                <label><small>Filtra Categoria:</small></label>
-                <select id="repSelC" onchange="updateProductFilter()"></select>
                 <div id="report-filters-body">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
                         <button class="btn-grey" style="font-size: 11px; padding: 5px;" onclick="setRange('today')">Oggi</button>
@@ -246,13 +234,6 @@
                     <label><small>Filtra Categoria:</small></label>
                     <select id="repSelC" onchange="updateProductFilter()"></select>
 
-                <label><small>Filtra Prodotto:</small></label>
-                <select id="repSelP" onchange="applyReports()"></select>
-                
-                <hr style="margin:15px 0; opacity:0.1">
-                <p>Incasso: <b id="stat-total" style="color:var(--s); font-size:1.2rem">0.00€</b></p>
-                <p>Scontrini: <b id="stat-count">0</b></p>
-                <p>Top Prodotto: <br><b id="stat-top" style="color:var(--p)">-</b></p>
                     <label><small>Filtra Prodotto:</small></label>
                     <select id="repSelP" onchange="applyReports()"></select>
                     
