@@ -8,6 +8,7 @@
     <meta name="theme-color" content="#2563eb">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://via.placeholder.com/192x192.png?text=EzGest">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -307,7 +308,9 @@
     }
     async function processSale() {
         if(!cart.length) return showToast("Il carrello è vuoto", "error");
-        await fetch(`${API}/vendite?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({ items: cart, total: document.getElementById('cart-sum').innerText }) });
+        // Security Fix: Ricalcola il totale dai dati grezzi, non dal DOM
+        const calculatedTotal = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0).toFixed(2);
+        await fetch(`${API}/vendite?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({ items: cart, total: calculatedTotal }) });
         showToast("Scontrino Chiuso!", "success"); cart = []; renderCart(); toggleCart();
     }
 
