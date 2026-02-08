@@ -103,6 +103,65 @@ export default {
         }
       }
 
+      if (url.pathname === "/api/reports") {
+        const from = url.searchParams.get("from");
+        const to = url.searchParams.get("to");
+        const category = url.searchParams.get("category");
+        const product = url.searchParams.get("product");
+
+        const matchStage = { companyId };
+        if (from || to) {
+          matchStage.createdAt = {};
+          if (from) matchStage.createdAt.$gte = new Date(from);
+          if (to) matchStage.createdAt.$lte = new Date(to + 'T23:59:59.999Z');
+        }
+
+        const pipeline = [
+          { $match: matchStage },
+          { $unwind: "$items" }
+        ];
+
+        const itemMatch = {};
+        if (category && category !== 'TUTTI') itemMatch["items.categoria"] = category;
+        if (product && product !== 'TUTTI') itemMatch["items.nome"] = product;
+        
+        if (Object.keys(itemMatch).length > 0) pipeline.push({ $match: itemMatch });
+
+        pipeline.push({ $addFields: { priceVal: { $toDouble: "$items.prezzo" } } });
+
+        pipeline.push({
+          $facet: {
+            "totals": [
+              { $group: { _id: null, totalRevenue: { $sum: "$priceVal" } } }
+            ],
+            "receiptsCount": [
+              { $group: { _id: "$_id" } },
+              { $count: "count" }
+            ],
+            "trend": [
+              { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, dailyTotal: { $sum: "$priceVal" } } },
+              { $sort: { _id: 1 } }
+            ],
+            "trendBreakdown": [
+              { $group: { _id: { d: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, p: "$items.nome" }, dailyTotal: { $sum: "$priceVal" } } },
+              { $sort: { "_id.d": 1 } }
+            ],
+            "hourly": [
+              { $group: { _id: { $hour: "$createdAt" }, count: { $sum: 1 } } }, // Conta oggetti venduti per ora come proxy di attività
+              { $sort: { _id: 1 } }
+            ],
+            "byCategory": [ { $group: { _id: "$items.categoria", total: { $sum: "$priceVal" } } } ],
+            "topProducts": [
+              { $group: { _id: "$items.nome", q: { $sum: 1 }, t: { $sum: "$priceVal" } } },
+              { $sort: { q: -1 } }, { $limit: 5 }
+            ]
+          }
+        });
+
+        const results = await db.collection("sales").aggregate(pipeline).toArray();
+        return resJson(results[0]);
+      }
+
       return new Response("Not Found", { status: 404 });
     } catch (e) {
       return new Response(e.message, { status: 500, headers: corsHeaders });

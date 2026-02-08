@@ -272,7 +272,7 @@
 
 <script>
     const API = 'http://localhost:8787/api';
-    let currentId = null, cart = [], allCats = [], allProducts = [], allSales = [], activeCatFilter = 'TUTTI', charts = {};
+    let currentId = null, cart = [], allCats = [], allProducts = [], activeCatFilter = 'TUTTI', charts = {};
     const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#e11d48', '#8b5cf6', '#06b6d4', '#f43f5e', '#ec4899'];
 
     function navigate(id) {
@@ -316,19 +316,22 @@
 
     // --- REPORT CON ORDINAMENTO CRONOLOGICO COMPLETO ---
     async function loadReports() {
-        const res = await fetch(`${API}/vendite?companyId=${currentId}`);
-        allSales = await res.json();
-        const cNames = [...new Set(allCats.map(c => c.nome))];
-        document.getElementById('repSelC').innerHTML = '<option value="TUTTI">Tutte le categorie</option>' + cNames.map(n => `<option value="${n}">${n}</option>`).join('');
-        updateProductFilter();
+        if(!allCats.length) await refresh(); // Assicura che le categorie siano caricate per i filtri
+        
+        if(document.getElementById('repSelC').innerHTML === "") {
+            const cNames = allCats.map(c => c.nome);
+            document.getElementById('repSelC').innerHTML = '<option value="TUTTI">Tutte le categorie</option>' + cNames.map(n => `<option value="${n}">${n}</option>`).join('');
+            updateProductFilter(false); // Pass false to skip auto-apply
+        }
+        await applyReports();
     }
 
-    function updateProductFilter() {
+    function updateProductFilter(apply = true) {
         const selC = document.getElementById('repSelC').value;
         const filteredProducts = selC === 'TUTTI' ? allProducts : allProducts.filter(p => p.categoria === selC);
         const pNames = [...new Set(filteredProducts.map(p => p.nome))];
         document.getElementById('repSelP').innerHTML = '<option value="TUTTI">Tutti i prodotti</option>' + pNames.map(n => `<option value="${n}">${n}</option>`).join('');
-        applyReports();
+        if(apply) applyReports();
     }
 
     function setRange(mode) {
@@ -342,56 +345,41 @@
         applyReports();
     }
 
-    function applyReports() {
+    async function applyReports() {
         const from = document.getElementById('repFrom').value, to = document.getElementById('repTo').value, 
               selC = document.getElementById('repSelC').value, selP = document.getElementById('repSelP').value;
         
-        let filtered = allSales.filter(s => {
-            const d = new Date(s.createdAt).toISOString().split('T')[0];
-            return (!from || d >= from) && (!to || d <= to);
-        });
+        const query = new URLSearchParams({ companyId: currentId, category: selC, product: selP });
+        if(from) query.append('from', from);
+        if(to) query.append('to', to);
 
-        let total = 0, hours = Array(24).fill(0), catsMap = {}, prodsMap = {}, dailyTotal = {}, dailyProdSplit = {};
-        let allDatesSet = new Set();
+        const res = await fetch(`${API}/reports?${query.toString()}`);
+        const data = await res.json();
 
-        filtered.forEach(s => {
-            let sTotal = 0; let saleValid = false;
-            // USO ISO DATE PER ORDINAMENTO SICURO (YYYY-MM-DD)
-            const dateKey = new Date(s.createdAt).toISOString().split('T')[0];
+        // Mapping Dati Backend -> UI
+        const totalRevenue = data.totals[0] ? data.totals[0].totalRevenue : 0;
+        const totalReceipts = data.receiptsCount[0] ? data.receiptsCount[0].count : 0;
+        const topProd = data.topProducts[0];
 
-            s.items.forEach(i => {
-                const matchC = (selC === 'TUTTI' || i.categoria === selC);
-                const matchP = (selP === 'TUTTI' || i.nome === selP);
-                if(matchC && matchP) {
-                    saleValid = true; const val = parseFloat(i.prezzo); sTotal += val;
-                    allDatesSet.add(dateKey);
-                    catsMap[i.categoria] = (catsMap[i.categoria] || 0) + val;
-                    if(!prodsMap[i.nome]) prodsMap[i.nome] = { q: 0, t: 0 };
-                    prodsMap[i.nome].q++; prodsMap[i.nome].t += val;
-                    if(!dailyProdSplit[i.nome]) dailyProdSplit[i.nome] = {};
-                    dailyProdSplit[i.nome][dateKey] = (dailyProdSplit[i.nome][dateKey] || 0) + val;
-                }
-            });
+        document.getElementById('stat-total').innerText = totalRevenue.toFixed(2) + "€";
+        document.getElementById('stat-count').innerText = totalReceipts;
+        document.getElementById('stat-top').innerText = topProd ? `${topProd._id} (${topProd.q} pz)` : "-";
 
-            if(saleValid) {
-                total += sTotal;
-                dailyTotal[dateKey] = (dailyTotal[dateKey] || 0) + sTotal;
-                hours[new Date(s.createdAt).getHours()]++;
-            }
-        });
-
-        // ORDINAMENTO CRONOLOGICO (Dalla più vecchia alla più recente)
-        const sortedDates = Array.from(allDatesSet).sort();
-        
-        // ETICHETTE LEGGIBILI PER IL GRAFICO (es. 05 feb)
-        const labels = sortedDates.map(d => new Date(d).toLocaleDateString('it-IT', {day:'2-digit', month:'short'}));
-
+        // Trend Chart
+        const allDates = data.trend.map(t => t._id);
+        const trendLabels = allDates.map(d => new Date(d).toLocaleDateString('it-IT', {day:'2-digit', month:'short'}));
         let trendDatasets = [];
+
         if (selC !== 'TUTTI' && selP === 'TUTTI') {
-            Object.keys(dailyProdSplit).forEach((pName, idx) => {
+            const products = [...new Set(data.trendBreakdown.map(t => t._id.p))];
+            products.forEach((pName, idx) => {
+                const pData = allDates.map(d => {
+                    const item = data.trendBreakdown.find(x => x._id.d === d && x._id.p === pName);
+                    return item ? item.dailyTotal : 0;
+                });
                 trendDatasets.push({
                     label: pName,
-                    data: sortedDates.map(d => dailyProdSplit[pName][d] || 0),
+                    data: pData,
                     borderColor: COLORS[idx % COLORS.length],
                     backgroundColor: COLORS[idx % COLORS.length] + '22',
                     fill: false, tension: 0.4
@@ -400,27 +388,27 @@
         } else {
             trendDatasets.push({
                 label: selP === 'TUTTI' ? 'Fatturato Totale' : selP,
-                data: sortedDates.map(d => dailyTotal[d] || 0),
+                data: data.trend.map(t => t.dailyTotal),
                 borderColor: COLORS[0],
                 backgroundColor: COLORS[0] + '22',
                 fill: true, tension: 0.4
             });
         }
-
-        document.getElementById('stat-total').innerText = total.toFixed(2) + "€";
-        document.getElementById('stat-count').innerText = Object.values(hours).reduce((a,b)=>a+b, 0);
-        const sortedProds = Object.entries(prodsMap).sort((a,b) => b[1].q - a[1].q);
-        document.getElementById('stat-top').innerText = sortedProds[0] ? `${sortedProds[0][0]} (${sortedProds[0][1].q} pz)` : "-";
         
-        updateMultiChart('chartTrend', 'line', labels, trendDatasets);
-        updateChart('chartHour', 'bar', Array.from({length:24},(_,i)=>i+":00"), hours, 'Scontrini', '#10b981');
+        updateMultiChart('chartTrend', 'line', trendLabels, trendDatasets);
 
-        let pL, pD, pT;
-        if(selC === 'TUTTI') { pL = Object.keys(catsMap); pD = Object.values(catsMap); pT = 'Mix Categorie'; }
-        else { pL = Object.keys(prodsMap); pD = Object.values(prodsMap).map(x => x.t); pT = `Prodotti in ${selC}`; }
-        updateChart('chartCat', 'doughnut', pL, pD, pT);
+        // Hourly Chart
+        const hours = Array(24).fill(0);
+        data.hourly.forEach(h => hours[h._id] = h.count);
+        updateChart('chartHour', 'bar', Array.from({length:24},(_,i)=>i+":00"), hours, 'Attività', '#10b981');
 
-        document.querySelector('#tTopProds tbody').innerHTML = sortedProds.slice(0,5).map(([n, d]) => `<tr><td>${n}</td><td>${d.q}</td><td>${d.t.toFixed(2)}€</td></tr>`).join('');
+        // Category/Product Distribution Chart
+        const catLabels = data.byCategory.map(c => c._id);
+        const catData = data.byCategory.map(c => c.total);
+        updateChart('chartCat', 'doughnut', catLabels, catData, 'Distribuzione');
+
+        // Top Products Table
+        document.querySelector('#tTopProds tbody').innerHTML = data.topProducts.map(p => `<tr><td>${p._id}</td><td>${p.q}</td><td>${p.t.toFixed(2)}€</td></tr>`).join('');
     }
 
     function updateMultiChart(id, type, labels, datasets) {
