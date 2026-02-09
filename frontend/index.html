@@ -298,6 +298,11 @@
         
         const res = await fetch(`${API}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
         if(res.status === 401) { doLogout(); return null; }
+        if(res.status === 403) { 
+            showToast("Accesso negato a questa azienda", "error");
+            navigate('view-selection'); // Reindirizza alla selezione
+            return null; 
+        }
         return res;
     }
 
