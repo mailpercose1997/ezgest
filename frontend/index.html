@@ -41,16 +41,21 @@
         .cat-pill.active { background: var(--p); color: white; border-color: var(--p); box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }
 
         .tab-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-        #sub-pos { height: 100%; }
+        #sub-cassa { height: 100%; }
         #sub-gest, #sub-repo { overflow-y: auto; height: 100%; }
+        
+        .sub-tabs { display: flex; padding: 10px 20px; gap: 10px; background: #fff; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .sub-tab { padding: 8px 16px; border-radius: 20px; background: #f1f5f9; color: #64748b; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+        .sub-tab:hover { background: #e2e8f0; }
+        .sub-tab.active { background: var(--p); color: white; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }
 
-        .pos-container { display: grid; grid-template-columns: 1fr 380px; flex: 1; min-height: 0; background: #f8fafc; }
+        .pos-container { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: 1fr; flex: 1; min-height: 0; background: #f8fafc; overflow: hidden; }
         .products-area { overflow-y: auto; padding: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; align-content: start; }
         .product-card { background: white; border: 1px solid var(--border); padding: 15px; border-radius: 12px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .product-card:hover { transform: translateY(-2px); border-color: var(--p); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .product-card strong { display: block; margin: 5px 0; font-size: 0.95rem; color: #334155; }
         
-        .cart-panel { background: white; border-left: 1px solid var(--border); display: flex; flex-direction: column; z-index: 10; box-shadow: -2px 0 10px rgba(0,0,0,0.03); }
+        .cart-panel { background: white; border-left: 1px solid var(--border); display: flex; flex-direction: column; z-index: 10; box-shadow: -2px 0 10px rgba(0,0,0,0.03); overflow: hidden; }
         .cart-items { flex: 1; overflow-y: auto; padding: 15px; }
         .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.95rem; }
         .cart-total { padding: 20px; background: #f8fafc; border-top: 1px solid var(--border); }
@@ -201,28 +206,45 @@
         </div>
 
         <div class="nav-tabs">
-            <div class="tab active" id="tab-pos" onclick="switchTab('pos')">🛒 SCONTRINO</div>
+            <div class="tab active" id="tab-cassa" onclick="switchTab('cassa')">🛒 CASSA</div>
             <div class="tab" id="tab-gest" onclick="switchTab('gest')">⚙️ GESTIONE</div>
             <div class="tab" id="tab-repo" onclick="switchTab('repo')">📊 REPORT</div>
         </div>
 
-        <div id="sub-pos" class="tab-content">
-            <div class="category-slider" id="pos-cat-bar"></div>
-            <div class="pos-container">
-                <div class="products-area" id="pos-products"></div>
-                <div class="cart-panel" id="mobile-cart">
-                    <div class="cart-header-mobile" onclick="toggleCart()">
-                        <span>🛒 Carrello <small id="cart-count-badge">(0)</small></span>
-                        <span id="cart-preview-total">0.00€</span>
-                    </div>
-                    <div class="cart-header-desktop">Carrello</div>
-                    <div class="cart-items" id="cart-list"></div>
-                    <div class="cart-total">
-                        <div style="display:flex; justify-content:space-between; font-size:22px; font-weight:800; margin-bottom:15px">
-                            <span>TOTALE</span><span><span id="cart-sum">0.00</span>€</span>
+        <div id="sub-cassa" class="tab-content">
+            <div class="sub-tabs">
+                <div class="sub-tab active" id="sub-tab-pos" onclick="switchCassaMode('pos')">Nuovo Scontrino</div>
+                <div class="sub-tab" id="sub-tab-hist" onclick="switchCassaMode('hist')">Storico</div>
+            </div>
+
+            <div id="cassa-view-pos" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+                <div class="category-slider" id="pos-cat-bar"></div>
+                <div class="pos-container">
+                    <div class="products-area" id="pos-products"></div>
+                    <div class="cart-panel" id="mobile-cart">
+                        <div class="cart-header-mobile" onclick="toggleCart()">
+                            <span>🛒 Carrello <small id="cart-count-badge">(0)</small></span>
+                            <span id="cart-preview-total">0.00€</span>
                         </div>
-                        <button class="btn-save" onclick="processSale()" style="width:100%; padding:15px; font-size:18px">CHIUDI SCONTRINO</button>
+                        <div class="cart-header-desktop">Carrello</div>
+                        <div class="cart-items" id="cart-list"></div>
+                        <div class="cart-total">
+                            <div style="display:flex; justify-content:space-between; font-size:22px; font-weight:800; margin-bottom:15px">
+                                <span>TOTALE</span><span><span id="cart-sum">0.00</span>€</span>
+                            </div>
+                            <button class="btn-save" onclick="processSale()" style="width:100%; padding:15px; font-size:18px">CHIUDI SCONTRINO</button>
+                        </div>
                     </div>
+                </div>
+            </div>
+
+            <div id="cassa-view-hist" class="hidden" style="flex:1; overflow-y: auto; padding: 20px;">
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px">
+                        <h3>Storico Scontrini</h3>
+                        <input type="date" id="histDate" style="width:auto; margin:0" onchange="loadHistory()">
+                    </div>
+                    <table id="tHistory"><thead><tr><th>Ora</th><th>Totale</th><th>Azioni</th></tr></thead><tbody></tbody></table>
                 </div>
             </div>
         </div>
@@ -287,7 +309,7 @@
 
 <script>
     const API = 'http://localhost:8787/api';
-    let currentId = null, cart = [], allCats = [], allProducts = [], activeCatFilter = 'TUTTI', charts = {};
+    let currentId = null, cart = [], allCats = [], allProducts = [], activeCatFilter = 'TUTTI', charts = {}, currentReceipts = [];
     const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#e11d48', '#8b5cf6', '#06b6d4', '#f43f5e', '#ec4899'];
 
     // Wrapper per chiamate API autenticate
@@ -311,7 +333,21 @@
         document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
         document.getElementById('tab-'+tab).classList.add('active');
         document.getElementById('sub-'+tab).classList.remove('hidden');
-        if(tab === 'repo') loadReports(); else refresh();
+        if(tab === 'repo') loadReports(); 
+        else if(tab === 'cassa') {
+            if(document.getElementById('sub-tab-hist').classList.contains('active')) loadHistory();
+            else refresh();
+        }
+        else refresh();
+    }
+
+    function switchCassaMode(mode) {
+        document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('sub-tab-'+mode).classList.add('active');
+        document.getElementById('cassa-view-pos').classList.add('hidden');
+        document.getElementById('cassa-view-hist').classList.add('hidden');
+        document.getElementById('cassa-view-'+mode).classList.remove('hidden');
+        if(mode === 'hist') loadHistory(); else refresh();
     }
 
     // --- POS & CORE (Invariati) ---
@@ -322,10 +358,15 @@
     }
     function renderPosProducts() {
         const filtered = activeCatFilter === 'TUTTI' ? allProducts : allProducts.filter(p => p.categoria === activeCatFilter);
-        document.getElementById('pos-products').innerHTML = filtered.map(p => `<div class="product-card" onclick='addToCart(${JSON.stringify(p)})'><small>${p.categoria}</small><br><strong>${p.nome}</strong><br><b style="color:var(--p)">${parseFloat(p.prezzo).toFixed(2)}€</b></div>`).join('');
+        document.getElementById('pos-products').innerHTML = filtered.map(p => {
+            const qty = cart.filter(i => i._id === p._id).length;
+            const badge = qty > 0 ? `<div style="position:absolute; top:-8px; right:-8px; background:var(--d); color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2); z-index:2">${qty}</div>` : '';
+            return `<div class="product-card" style="position:relative; overflow:visible" onclick='addToCart(${JSON.stringify(p)})'>${badge}<small>${p.categoria}</small><br><strong>${p.nome}</strong><br><b style="color:var(--p)">${parseFloat(p.prezzo).toFixed(2)}€</b></div>`;
+        }).join('');
     }
     function addToCart(p) { cart.push({...p}); renderCart(); }
     function renderCart() {
+        renderPosProducts(); // Aggiorna i badge quantità
         document.getElementById('cart-list').innerHTML = cart.map((item, i) => `<div class="cart-item"><span>${item.nome}</span><span>${parseFloat(item.prezzo).toFixed(2)}€ <button onclick="cart.splice(${i},1);renderCart()" style="background:none;color:red;padding:0;cursor:pointer">✕</button></span></div>`).join('');
         const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0);
         document.getElementById('cart-sum').innerText = total.toFixed(2);
@@ -336,8 +377,67 @@
         if(!cart.length) return showToast("Il carrello è vuoto", "error");
         // Security Fix: Ricalcola il totale dai dati grezzi, non dal DOM
         const calculatedTotal = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0).toFixed(2);
-        await apiCall(`/vendite?companyId=${currentId}`, 'POST', { items: cart, total: calculatedTotal });
+        await apiCall(`/vendite?companyId=${currentId}`, 'POST', { items: cart, total: calculatedTotal, date: new Date() });
         showToast("Scontrino Chiuso!", "success"); cart = []; renderCart(); toggleCart();
+    }
+
+    // --- STORICO SCONTRINI ---
+    async function loadHistory() {
+        const dateInput = document.getElementById('histDate');
+        if(!dateInput.value) {
+            const now = new Date();
+            dateInput.value = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+        }
+        
+        try {
+            const res = await apiCall(`/vendite?companyId=${currentId}&date=${dateInput.value}`);
+            if(!res) return;
+            
+            if(!res.ok) throw new Error(`Errore API (${res.status})`);
+            
+            let receipts = await res.json();
+            if(!Array.isArray(receipts)) throw new Error("Formato dati non valido");
+            
+            // Filtro Client-side e Ordinamento Decrescente (Newest First)
+            const filterDate = dateInput.value;
+            receipts = receipts.filter(r => {
+                const d = new Date(r.date || r.createdAt);
+                if(isNaN(d.getTime())) return false;
+                const localYMD = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                return localYMD === filterDate;
+            }).sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
+            
+            currentReceipts = receipts; // Salva in memoria per i dettagli
+            
+            const tbody = document.querySelector('#tHistory tbody');
+            if(!receipts.length) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px">Nessuno scontrino trovato</td></tr>'; return; }
+            
+            let dayTotal = 0;
+            tbody.innerHTML = receipts.map(r => {
+                dayTotal += parseFloat(r.total);
+                const d = new Date(r.date || r.createdAt);
+                const time = !isNaN(d) ? d.toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit'}) : '-';
+                const formattedTotal = parseFloat(r.total).toFixed(2);
+                return `<tr id="row-hist-${r._id}">
+                    <td>${time}</td>
+                    <td>${formattedTotal}€</td>
+                    <td style="text-align:right">
+                        <button class="btn-grey" style="padding:5px 8px; background:#3b82f6" onclick="showReceiptDetails('${r._id}')">ℹ️</button>
+                    </td>
+                </tr>`;
+            }).join('') + `<tr style="background:#f1f5f9; font-weight:bold; border-top:2px solid #cbd5e1"><td>TOTALE</td><td>${dayTotal.toFixed(2)}€</td><td></td></tr>`;
+        } catch (e) {
+            console.error(e);
+            showToast("Errore caricamento: " + e.message, "error");
+            document.querySelector('#tHistory tbody').innerHTML = `<tr><td colspan="3" style="text-align:center; color:red; padding:20px">Errore connessione server</td></tr>`;
+        }
+    }
+    
+    function showReceiptDetails(id) {
+        const r = currentReceipts.find(x => x._id === id);
+        if(!r || !r.items || !r.items.length) return showToast("Nessun dettaglio prodotti", "neutral");
+        const list = r.items.map(i => `- ${i.nome}: ${parseFloat(i.prezzo).toFixed(2)}€`).join('\n');
+        alert(`Dettaglio Scontrino:\n\n${list}`);
     }
 
     // --- REPORT CON ORDINAMENTO CRONOLOGICO COMPLETO ---
@@ -526,7 +626,7 @@
         const cos = await res.json();
         document.getElementById('list-companies').innerHTML = cos.map(c => `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`).join(' ');
     }
-    function openDash(id, name, code) { currentId = id; document.getElementById('activeCoName').innerText = name; document.getElementById('activeCoCode').innerText = "Cod: "+code; navigate('view-dashboard'); switchTab('pos'); }
+    function openDash(id, name, code) { currentId = id; document.getElementById('activeCoName').innerText = name; document.getElementById('activeCoCode').innerText = "Cod: "+code; navigate('view-dashboard'); switchTab('cassa'); }
     
     // Toast Logic
     function showToast(msg, type = 'neutral') {
