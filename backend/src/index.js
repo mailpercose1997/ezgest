@@ -1,5 +1,9 @@
 import { MongoClient, ObjectId } from 'mongodb';
 
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // --- CRYPTO UTILS (Native Web Crypto API) ---
 
 async function hashPassword(password, salt) {
@@ -16,7 +20,7 @@ async function hashPassword(password, salt) {
 
 async function signJWT(payload, secret) {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const body = btoa(JSON.stringify({ ...payload, exp: Date.now() + 86400000 })); // 24h
+  const body = btoa(JSON.stringify({ ...payload, exp: Date.now() + 604800000 })); // 7 giorni
   const unsignedToken = `${header}.${body}`;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(unsignedToken));
@@ -120,13 +124,14 @@ export default {
       if (url.pathname === "/api/azienda/crea" && request.method === "POST") {
         const { companyName } = await request.json();
         if (!companyName) return resJson({ success: false, message: "Nome azienda richiesto" }, 400);
-        const result = await db.collection("companies").insertOne({ 
+        const newCompany = { 
           name: companyName, 
           inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(), 
           owner: userPayload.email 
-        });
+        };
+        const result = await db.collection("companies").insertOne(newCompany);
         await db.collection("users").updateOne({ email: userPayload.email }, { $addToSet: { companies: result.insertedId.toString() } });
-        return resJson({ success: true });
+        return resJson({ success: true, company: { ...newCompany, _id: result.insertedId } });
       }
 
       if (url.pathname === "/api/azienda/unisciti" && request.method === "POST") {
@@ -176,7 +181,15 @@ export default {
       }
 
       if (url.pathname === "/api/prodotti") {
-        if (request.method === "GET") return resJson(await db.collection("products").find({ companyId }).toArray());
+        if (request.method === "GET") {
+          const page = parseInt(url.searchParams.get("page")) || 1;
+          const limit = parseInt(url.searchParams.get("limit")) || 50;
+          const skip = (page - 1) * limit;
+          const search = url.searchParams.get("search");
+          const query = { companyId, deletedAt: { $exists: false } }; // Soft Delete: Escludi eliminati
+          if (search) query.nome = { $regex: escapeRegex(search), $options: 'i' }; // Security: Escape regex
+          return resJson(await db.collection("products").find(query).skip(skip).limit(limit).toArray());
+        }
         if (request.method === "POST") {
           const body = await request.json();
           await db.collection("products").insertOne({ ...body, companyId });
@@ -187,14 +200,15 @@ export default {
           const data = await request.json();
           delete data._id;
           // FIX SICUREZZA: Aggiunto companyId al filtro
-          const result = await db.collection("products").updateOne({ _id: new ObjectId(id), companyId }, { $set: data });
+          const result = await db.collection("products").updateOne({ _id: new ObjectId(id), companyId, deletedAt: { $exists: false } }, { $set: data });
           if (result.matchedCount === 0) return resJson({ success: false, message: "Prodotto non trovato" }, 404);
           return resJson({ success: true });
         }
         if (request.method === "DELETE") {
           if (!id || !ObjectId.isValid(id)) return resJson({ success: false, message: "ID non valido" }, 400);
-          const result = await db.collection("products").deleteOne({ _id: new ObjectId(id), companyId });
-          if (result.deletedCount === 0) return resJson({ success: false, message: "Prodotto non trovato" }, 404);
+          // Soft Delete: Imposta deletedAt invece di cancellare
+          const result = await db.collection("products").updateOne({ _id: new ObjectId(id), companyId }, { $set: { deletedAt: new Date() } });
+          if (result.matchedCount === 0) return resJson({ success: false, message: "Prodotto non trovato" }, 404);
           return resJson({ success: true });
         }
       }
