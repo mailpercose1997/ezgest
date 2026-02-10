@@ -42,7 +42,7 @@
 
         .tab-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
         #sub-pos { height: 100%; }
-        #sub-gest, #sub-repo, #sub-sett { overflow-y: auto; height: 100%; }
+        #sub-gest, #sub-repo { overflow-y: auto; height: 100%; }
 
         .pos-container { display: grid; grid-template-columns: 1fr 380px; flex: 1; min-height: 0; background: #f8fafc; }
         .products-area { overflow-y: auto; padding: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; align-content: start; }
@@ -107,7 +107,7 @@
             .cart-total { padding: 15px; }
 
             /* Vertical Stack Layouts */
-            .report-grid:not(.hidden), .settings-grid:not(.hidden) { 
+            .report-grid:not(.hidden) { 
                 display: flex !important; flex-direction: column !important; overflow-x: hidden; overflow-y: auto !important; 
                 gap: 15px; padding: 15px; height: 100% !important; align-items: stretch;
             }
@@ -122,7 +122,7 @@
                 display: flex !important; flex-direction: column !important; height: auto; gap: 15px;
             }
             
-            .report-grid > .card, .charts-row > .card, .mobile-swipe-col > .card, .settings-grid > .card { 
+            .report-grid > .card, .charts-row > .card, .mobile-swipe-col > .card { 
                 min-width: 0; width: 100%; max-height: none; overflow: visible; margin-bottom: 0;
             }
             .gest-grid > .card { min-width: 90vw; width: 90vw; scroll-snap-align: center; overflow-y: auto; margin-bottom: 0; }
@@ -204,7 +204,6 @@
             <div class="tab active" id="tab-pos" onclick="switchTab('pos')">🛒 SCONTRINO</div>
             <div class="tab" id="tab-gest" onclick="switchTab('gest')">⚙️ GESTIONE</div>
             <div class="tab" id="tab-repo" onclick="switchTab('repo')">📊 REPORT</div>
-            <div class="tab" id="tab-sett" onclick="switchTab('sett')">⚙️ IMPOSTAZIONI</div>
         </div>
 
         <div id="sub-pos" class="tab-content">
@@ -283,19 +282,6 @@
                 </div>
             </div>
         </div>
-
-        <div id="sub-sett" class="tab-content hidden settings-grid" style="padding:20px; display:grid; grid-template-columns:1fr 1fr; gap:20px">
-            <div class="card">
-                <h3>👥 Team Aziendale</h3>
-                <p>Codice Invito: <b id="sett-invite" style="font-size:1.2rem; color:var(--p); letter-spacing:2px"></b></p>
-                <table id="tMembers"><thead><tr><th>Nome</th><th>Email</th><th>Ruolo</th><th>Azioni</th></tr></thead><tbody></tbody></table>
-            </div>
-            <div class="card">
-                <h3>👤 Il tuo Profilo</h3>
-                <p>Nome: <b id="prof-name"></b></p>
-                <p>Email: <b id="prof-email"></b></p>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -310,21 +296,14 @@
         const headers = { 'Content-Type': 'application/json' };
         if(token) headers['Authorization'] = `Bearer ${token}`;
         
-        try {
-            const res = await fetch(`${API}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
-            if(res.status === 401) { doLogout(); return null; }
-            if(res.status === 403) { 
-                showToast("Accesso negato a questa azienda", "error");
-                navigate('view-selection'); 
-                return null; 
-            }
-            if(!res.ok) throw new Error(await res.text() || res.statusText);
-            return res;
-        } catch(e) {
-            console.error(e);
-            showToast("Errore API: " + e.message, "error");
-            throw e;
+        const res = await fetch(`${API}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
+        if(res.status === 401) { doLogout(); return null; }
+        if(res.status === 403) { 
+            showToast("Accesso negato a questa azienda", "error");
+            navigate('view-selection'); // Reindirizza alla selezione
+            return null; 
         }
+        return res;
     }
 
     function navigate(id) {
@@ -337,7 +316,7 @@
         document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
         document.getElementById('tab-'+tab).classList.add('active');
         document.getElementById('sub-'+tab).classList.remove('hidden');
-        if(tab === 'repo') loadReports(); else if(tab === 'sett') loadSettings(); else refresh();
+        if(tab === 'repo') loadReports(); else refresh();
     }
 
     // --- POS & CORE (Invariati) ---
@@ -463,35 +442,6 @@
         document.querySelector('#tTopProds tbody').innerHTML = data.topProducts.map(p => `<tr><td>${p._id}</td><td>${p.q}</td><td>${p.t.toFixed(2)}€</td></tr>`).join('');
     }
 
-    // --- IMPOSTAZIONI TEAM ---
-    async function loadSettings() {
-        const res = await apiCall(`/azienda/membri?companyId=${currentId}`);
-        const data = await res.json();
-        const user = JSON.parse(localStorage.getItem('ezUser'));
-        
-        document.getElementById('sett-invite').innerText = data.inviteCode;
-        document.getElementById('prof-name').innerText = `${user.nome} ${user.cognome}`;
-        document.getElementById('prof-email').innerText = user.email;
-
-        document.querySelector('#tMembers tbody').innerHTML = data.members.map(m => {
-            const isOwner = m.email === data.owner;
-            const isMe = m._id === user.id;
-            const canKick = (user.email === data.owner) && !isMe;
-            return `<tr>
-                <td>${m.nome} ${m.cognome}</td>
-                <td>${m.email}</td>
-                <td>${isOwner ? '<span style="color:var(--p);font-weight:bold">Proprietario</span>' : 'Membro'}</td>
-                <td>${canKick ? `<button class="btn-red" style="padding:5px 10px; font-size:11px" onclick="kickMember('${m._id}')">Rimuovi</button>` : ''}</td>
-            </tr>`;
-        }).join('');
-    }
-
-    async function kickMember(userId) {
-        if(!confirm("Rimuovere questo utente dall'azienda?")) return;
-        const res = await apiCall(`/azienda/membri?companyId=${currentId}&userId=${userId}`, 'DELETE');
-        if(res && res.ok) { showToast("Utente rimosso", "success"); loadSettings(); }
-    }
-
     function updateMultiChart(id, type, labels, datasets) {
         if(charts[id]) charts[id].destroy();
         charts[id] = new Chart(document.getElementById(id), {
@@ -539,7 +489,6 @@
         
         try {
             const res = await fetch(`${API}/login`, { method: 'POST', body: JSON.stringify({email, password: pass}) });
-            if (!res.ok) throw new Error(await res.text() || res.statusText);
             const d = await res.json(); 
             if(d.success) { 
                 localStorage.setItem('ezUser', JSON.stringify(d.user)); 
@@ -548,7 +497,7 @@
             } else {
                 showToast(d.message || "Credenziali errate", "error");
             }
-        } catch(e) { console.error(e); showToast("Errore: " + e.message, "error"); }
+        } catch(e) { showToast("Errore di connessione", "error"); }
         finally { btn.disabled = false; btn.innerText = "Accedi"; }
     }
     async function doRegister() {
@@ -565,7 +514,6 @@
 
         try {
             const res = await fetch(`${API}/register`, { method: 'POST', body: JSON.stringify({nome, cognome, dob, email, password: pass}) });
-            if (!res.ok) throw new Error(await res.text() || res.statusText);
             const d = await res.json();
             if(d.success) { 
                 showToast("Registrato! Ora accedi.", "success"); 
@@ -573,7 +521,7 @@
             } else {
                 showToast(d.message || "Errore registrazione", "error");
             }
-        } catch(e) { console.error(e); showToast("Errore: " + e.message, "error"); }
+        } catch(e) { showToast("Errore di connessione", "error"); }
         finally { btn.disabled = false; btn.innerText = "Registrati"; }
     }
     async function showSelection() {

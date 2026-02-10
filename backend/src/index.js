@@ -1,30 +1,32 @@
 import { MongoClient, ObjectId } from 'mongodb';
 
 // --- CRYPTO UTILS (Native Web Crypto API) ---
+const SECRET = "CAMBIAMI_CON_UNA_STRINGA_SEGRETA_LUNGA"; // In prod usa env.JWT_SECRET
+
 async function hashPassword(password, salt) {
   const msgBuffer = new TextEncoder().encode(salt + password);
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
   return [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function signJWT(payload, secret) {
+async function signJWT(payload) {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const body = btoa(JSON.stringify({ ...payload, exp: Date.now() + 86400000 })); // 24h
   const unsignedToken = `${header}.${body}`;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(unsignedToken));
   const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   return `${unsignedToken}.${signatureBase64}`;
 }
 
-async function verifyJWT(request, secret) {
+async function verifyJWT(request) {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const token = authHeader.split(" ")[1];
   const [header, body, signature] = token.split(".");
   if (!header || !body || !signature) return null;
   
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
   const signatureBin = Uint8Array.from(atob(signature.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
   const isValid = await crypto.subtle.verify("HMAC", key, signatureBin, new TextEncoder().encode(`${header}.${body}`));
   
@@ -39,7 +41,6 @@ let client; // Variabile globale per il riutilizzo della connessione
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const SECRET = env.JWT_SECRET || "CAMBIAMI_CON_UNA_STRINGA_SEGRETA_LUNGA_LOCALE";
     
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
@@ -67,7 +68,7 @@ export default {
         const inputHash = await hashPassword(password, user.salt);
         if (inputHash !== user.password) return resJson({ success: false, message: "Credenziali errate" });
         
-        const token = await signJWT({ email: user.email, nome: user.nome, cognome: user.cognome, id: user._id }, SECRET);
+        const token = await signJWT({ email: user.email, nome: user.nome, cognome: user.cognome, id: user._id });
         return resJson({ success: true, user, token });
       }
 
@@ -94,7 +95,7 @@ export default {
 
       // --- MIDDLEWARE AUTH CHECK ---
       // Tutte le rotte sotto richiedono un token valido
-      const userPayload = await verifyJWT(request, SECRET);
+      const userPayload = await verifyJWT(request);
       if (!userPayload) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
 
       if (url.pathname === "/api/user/companies" && request.method === "GET") {
@@ -185,25 +186,6 @@ export default {
           const serverTotal = body.items.reduce((sum, item) => sum + parseFloat(item.prezzo), 0).toFixed(2);
           await db.collection("sales").insertOne({ ...body, total: serverTotal, companyId, createdAt: new Date() });
           return resJson({ success: true });
-        }
-      }
-      
-      // --- GESTIONE TEAM ---
-      if (url.pathname === "/api/azienda/membri") {
-        // GET: Lista membri (solo nome, cognome, email)
-        if (request.method === "GET") {
-           const co = await db.collection("companies").findOne({ _id: new ObjectId(companyId) });
-           const members = await db.collection("users").find({ companies: companyId }).project({ password: 0, salt: 0, companies: 0 }).toArray();
-           return resJson({ owner: co.owner, members, inviteCode: co.inviteCode });
-        }
-        // DELETE: Rimuovi membro (Solo Owner)
-        if (request.method === "DELETE") {
-           const userId = url.searchParams.get("userId");
-           const co = await db.collection("companies").findOne({ _id: new ObjectId(companyId) });
-           if (co.owner !== userPayload.email) return new Response("Solo il proprietario può rimuovere membri", { status: 403, headers: corsHeaders });
-           if (userId === userPayload.id) return new Response("Non puoi rimuoverti da solo", { status: 400, headers: corsHeaders });
-           await db.collection("users").updateOne({ _id: new ObjectId(userId) }, { $pull: { companies: companyId } });
-           return resJson({ success: true });
         }
       }
 
