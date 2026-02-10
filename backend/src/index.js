@@ -36,12 +36,10 @@ async function verifyJWT(request) {
   return payload;
 }
 
-let client; // Variabile globale per il riutilizzo della connessione
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    
+    const client = new MongoClient(env.MONGODB_URI);
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -51,11 +49,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
-      // Connection Pooling: Inizializza solo se non esiste
-      if (!client) {
-        client = new MongoClient(env.MONGODB_URI);
-        await client.connect();
-      }
+      await client.connect();
       const db = client.db("EzGest");
       const resJson = (d) => new Response(JSON.stringify(d), { headers: corsHeaders });
 
@@ -150,11 +144,11 @@ export default {
         }
         if (request.method === "PUT") {
           const { nome } = await request.json();
-          await db.collection("categories").updateOne({ _id: new ObjectId(id), companyId }, { $set: { nome } });
+          await db.collection("categories").updateOne({ _id: new ObjectId(id) }, { $set: { nome } });
           return resJson({ success: true });
         }
         if (request.method === "DELETE") {
-          await db.collection("categories").deleteOne({ _id: new ObjectId(id), companyId });
+          await db.collection("categories").deleteOne({ _id: new ObjectId(id) });
           return resJson({ success: true });
         }
       }
@@ -169,11 +163,11 @@ export default {
         if (request.method === "PUT") {
           const data = await request.json();
           delete data._id;
-          await db.collection("products").updateOne({ _id: new ObjectId(id), companyId }, { $set: data });
+          await db.collection("products").updateOne({ _id: new ObjectId(id) }, { $set: data });
           return resJson({ success: true });
         }
         if (request.method === "DELETE") {
-          await db.collection("products").deleteOne({ _id: new ObjectId(id), companyId });
+          await db.collection("products").deleteOne({ _id: new ObjectId(id) });
           return resJson({ success: true });
         }
       }
@@ -182,9 +176,7 @@ export default {
         if (request.method === "GET") return resJson(await db.collection("sales").find({ companyId }).sort({ createdAt: -1 }).toArray());
         if (request.method === "POST") {
           const body = await request.json();
-          // Security: Ricalcola il totale lato server per integrità
-          const serverTotal = body.items.reduce((sum, item) => sum + parseFloat(item.prezzo), 0).toFixed(2);
-          await db.collection("sales").insertOne({ ...body, total: serverTotal, companyId, createdAt: new Date() });
+          await db.collection("sales").insertOne({ ...body, companyId, createdAt: new Date() });
           return resJson({ success: true });
         }
       }
@@ -251,6 +243,8 @@ export default {
       return new Response("Not Found", { status: 404 });
     } catch (e) {
       return new Response(e.message, { status: 500, headers: corsHeaders });
+    } finally {
+      await client.close();
     }
   }
 };
