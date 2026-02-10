@@ -160,24 +160,9 @@
 <div id="app">
     <div id="view-login" class="card" style="max-width: 350px; margin: 100px auto; text-align: center;">
         <h2 style="color:var(--p)">EzGest SaaS</h2>
-        
-        <!-- Login Form -->
-        <div id="form-login">
-            <input type="email" id="loginEmail" placeholder="Email">
-            <input type="password" id="loginPass" placeholder="Password">
-            <button id="btnLogin" onclick="doLogin()" style="width:100%; margin-bottom:10px">Accedi</button>
-            <p style="font-size:12px">Non hai un account? <a href="#" onclick="toggleAuthMode()" style="color:var(--p)">Registrati</a></p>
-        </div>
-
-        <!-- Register Form -->
-        <div id="form-register" class="hidden">
-            <div style="display:flex; gap:10px"><input type="text" id="regNome" placeholder="Nome"><input type="text" id="regCognome" placeholder="Cognome"></div>
-            <input type="date" id="regDob" placeholder="Data di Nascita" style="color:#64748b">
-            <input type="email" id="regEmail" placeholder="Email">
-            <input type="password" id="regPass" placeholder="Password (min 6)">
-            <button id="btnReg" class="btn-grey" onclick="doRegister()" style="width:100%; margin-bottom:10px">Crea Account</button>
-            <p style="font-size:12px">Hai già un account? <a href="#" onclick="toggleAuthMode()" style="color:var(--p)">Accedi</a></p>
-        </div>
+        <input type="text" id="uIn" placeholder="Username">
+        <input type="password" id="pIn" placeholder="Password">
+        <button onclick="doLogin()" style="width:100%">Accedi</button>
     </div>
 
     <div id="view-selection" class="hidden" style="padding: 40px;">
@@ -290,17 +275,6 @@
     let currentId = null, cart = [], allCats = [], allProducts = [], activeCatFilter = 'TUTTI', charts = {};
     const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#e11d48', '#8b5cf6', '#06b6d4', '#f43f5e', '#ec4899'];
 
-    // Wrapper per chiamate API autenticate
-    async function apiCall(endpoint, method = 'GET', body = null) {
-        const token = localStorage.getItem('ezToken');
-        const headers = { 'Content-Type': 'application/json' };
-        if(token) headers['Authorization'] = `Bearer ${token}`;
-        
-        const res = await fetch(`${API}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
-        if(res.status === 401) { doLogout(); return null; }
-        return res;
-    }
-
     function navigate(id) {
         document.querySelectorAll('#app > div').forEach(d => d.classList.add('hidden'));
         document.getElementById(id).classList.remove('hidden');
@@ -336,7 +310,7 @@
         if(!cart.length) return showToast("Il carrello è vuoto", "error");
         // Security Fix: Ricalcola il totale dai dati grezzi, non dal DOM
         const calculatedTotal = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0).toFixed(2);
-        await apiCall(`/vendite?companyId=${currentId}`, 'POST', { items: cart, total: calculatedTotal });
+        await fetch(`${API}/vendite?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({ items: cart, total: calculatedTotal }) });
         showToast("Scontrino Chiuso!", "success"); cart = []; renderCart(); toggleCart();
     }
 
@@ -379,7 +353,7 @@
         if(from) query.append('from', from);
         if(to) query.append('to', to);
 
-        const res = await apiCall(`/reports?${query.toString()}`);
+        const res = await fetch(`${API}/reports?${query.toString()}`);
         const data = await res.json();
 
         // Mapping Dati Backend -> UI
@@ -461,68 +435,21 @@
     // --- REFRESH & LOGIN ---
     async function refresh() {
         if(!currentId) return;
-        const [rc, rp] = await Promise.all([apiCall(`/categorie?companyId=${currentId}`), apiCall(`/prodotti?companyId=${currentId}`)]);
+        const [rc, rp] = await Promise.all([fetch(`${API}/categorie?companyId=${currentId}`), fetch(`${API}/prodotti?companyId=${currentId}`)]);
         allCats = await rc.json(); allProducts = await rp.json();
         document.getElementById('tCats').innerHTML = allCats.map(c => `<tr id="row-cat-${c._id}"><td>${c.nome}</td><td style="text-align:right"><button class="btn-edit" onclick="editCatRow('${c._id}','${c.nome}')">✏️</button> <button class="btn-red" style="padding:5px 8px" onclick="delItem('categorie','${c._id}')">🗑️</button></td></tr>`).join('');
         document.getElementById('selPC').innerHTML = allCats.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
         document.getElementById('tProds').innerHTML = allProducts.map(p => `<tr id="row-prod-${p._id}"><td><strong>${p.nome}</strong><br><small>${p.categoria}</small></td><td>${p.prezzo}€</td><td style="text-align:right"><button class="btn-edit" onclick="editProdRow('${p._id}','${p.nome}',${p.prezzo},'${p.categoria}')">✏️</button> <button class="btn-red" style="padding:5px 8px" onclick="delItem('prodotti','${p._id}')">🗑️</button></td></tr>`).join('');
         renderPosCategories(); renderPosProducts();
     }
-
-    function toggleAuthMode() {
-        document.getElementById('form-login').classList.toggle('hidden');
-        document.getElementById('form-register').classList.toggle('hidden');
-    }
-
     async function doLogin() {
-        const email = document.getElementById('loginEmail').value.trim(); 
-        const pass = document.getElementById('loginPass').value.trim();
-        if(!email || !pass) return showToast("Inserisci email e password", "error");
-        
-        const btn = document.getElementById('btnLogin');
-        btn.disabled = true; btn.innerText = "Accesso...";
-        
-        try {
-            const res = await fetch(`${API}/login`, { method: 'POST', body: JSON.stringify({email, password: pass}) });
-            const d = await res.json(); 
-            if(d.success) { 
-                localStorage.setItem('ezUser', JSON.stringify(d.user)); 
-                localStorage.setItem('ezToken', d.token); 
-                showSelection(); 
-            } else {
-                showToast(d.message || "Credenziali errate", "error");
-            }
-        } catch(e) { showToast("Errore di connessione", "error"); }
-        finally { btn.disabled = false; btn.innerText = "Accedi"; }
-    }
-    async function doRegister() {
-        const nome = document.getElementById('regNome').value.trim();
-        const cognome = document.getElementById('regCognome').value.trim();
-        const dob = document.getElementById('regDob').value;
-        const email = document.getElementById('regEmail').value.trim();
-        const pass = document.getElementById('regPass').value.trim();
-
-        if(!nome || !cognome || !dob || !email || !pass) return showToast("Compila tutti i campi", "error");
-
-        const btn = document.getElementById('btnReg');
-        btn.disabled = true; btn.innerText = "Attendere...";
-
-        try {
-            const res = await fetch(`${API}/register`, { method: 'POST', body: JSON.stringify({nome, cognome, dob, email, password: pass}) });
-            const d = await res.json();
-            if(d.success) { 
-                showToast("Registrato! Ora accedi.", "success"); 
-                toggleAuthMode(); // Torna al login
-            } else {
-                showToast(d.message || "Errore registrazione", "error");
-            }
-        } catch(e) { showToast("Errore di connessione", "error"); }
-        finally { btn.disabled = false; btn.innerText = "Registrati"; }
+        const res = await fetch(`${API}/login`, { method: 'POST', body: JSON.stringify({username: uIn.value, password: pIn.value}) });
+        const d = await res.json(); if(d.success) { localStorage.setItem('ezUser', JSON.stringify(d.user)); showSelection(); } else showToast("Credenziali errate", "error");
     }
     async function showSelection() {
         const user = JSON.parse(localStorage.getItem('ezUser'));
         if(!user) return navigate('view-login'); navigate('view-selection');
-        const res = await apiCall(`/user/companies`); // Username preso dal token backend
+        const res = await fetch(`${API}/user/companies?username=${user.username}`);
         const cos = await res.json();
         document.getElementById('list-companies').innerHTML = cos.map(c => `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`).join(' ');
     }
@@ -539,16 +466,16 @@
         setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
     }
 
-    async function addCat() { await apiCall(`/categorie?companyId=${currentId}`, 'POST', {nome: inCat.value}); inCat.value = ""; refresh(); showToast('Categoria aggiunta', 'success'); }
-    async function addProd() { await apiCall(`/prodotti?companyId=${currentId}`, 'POST', {nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}); inPN.value = ""; inPP.value = ""; refresh(); showToast('Prodotto aggiunto', 'success'); }
-    async function delItem(t, id) { if(confirm("Eliminare?")) { await apiCall(`/${t}?id=${id}&companyId=${currentId}`, 'DELETE'); refresh(); showToast('Elemento eliminato'); } }
+    async function addCat() { await fetch(`${API}/categorie?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inCat.value}) }); inCat.value = ""; refresh(); showToast('Categoria aggiunta', 'success'); }
+    async function addProd() { await fetch(`${API}/prodotti?companyId=${currentId}`, { method: 'POST', body: JSON.stringify({nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}) }); inPN.value = ""; inPP.value = ""; refresh(); showToast('Prodotto aggiunto', 'success'); }
+    async function delItem(t, id) { if(confirm("Eliminare?")) { await fetch(`${API}/${t}?id=${id}&companyId=${currentId}`, { method: 'DELETE' }); refresh(); showToast('Elemento eliminato'); } }
     
     function editCatRow(id, name) {
         const row = document.getElementById(`row-cat-${id}`);
         row.innerHTML = `<td><input id="e-cn-${id}" value="${name}"></td><td style="text-align:right"><button class="btn-save" onclick="saveCat('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
     }
     async function saveCat(id) {
-        await apiCall(`/categorie?id=${id}&companyId=${currentId}`, 'PUT', {nome: document.getElementById(`e-cn-${id}`).value}); refresh(); showToast('Categoria modificata', 'success');
+        await fetch(`${API}/categorie?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-cn-${id}`).value}) }); refresh(); showToast('Categoria modificata', 'success');
     }
     function editProdRow(id, name, price, cat) {
         const row = document.getElementById(`row-prod-${id}`);
@@ -556,11 +483,11 @@
         row.innerHTML = `<td><input id="e-pn-${id}" value="${name}" style="margin-bottom:5px"><select id="e-pc-${id}">${opts}</select></td><td><input id="e-pp-${id}" value="${price}" type="number" style="width:70px">€</td><td style="text-align:right"><button class="btn-save" onclick="saveProd('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
     }
     async function saveProd(id) {
-        await apiCall(`/prodotti?id=${id}&companyId=${currentId}`, 'PUT', {nome: document.getElementById(`e-pn-${id}`).value, prezzo: document.getElementById(`e-pp-${id}`).value, categoria: document.getElementById(`e-pc-${id}`).value}); refresh(); showToast('Prodotto salvato', 'success');
+        await fetch(`${API}/prodotti?id=${id}&companyId=${currentId}`, { method: 'PUT', body: JSON.stringify({nome: document.getElementById(`e-pn-${id}`).value, prezzo: document.getElementById(`e-pp-${id}`).value, categoria: document.getElementById(`e-pc-${id}`).value}) }); refresh(); showToast('Prodotto salvato', 'success');
     }
 
-    async function doCreateCo() { await apiCall(`/azienda/crea`, 'POST', {companyName: newCo.value}); newCo.value = ""; showSelection(); }
-    async function doJoinCo() { const res = await apiCall(`/azienda/unisciti`, 'POST', {inviteCode: joinCode.value}); if(res && res.ok) { joinCode.value = ""; showSelection(); } else showToast("Codice invito errato", "error"); }
+    async function doCreateCo() { const u = JSON.parse(localStorage.getItem('ezUser')); await fetch(`${API}/azienda/crea`, { method: 'POST', body: JSON.stringify({companyName: newCo.value, ownerUsername: u.username}) }); newCo.value = ""; showSelection(); }
+    async function doJoinCo() { const u = JSON.parse(localStorage.getItem('ezUser')); const res = await fetch(`${API}/azienda/unisciti`, { method: 'POST', body: JSON.stringify({inviteCode: joinCode.value, username: u.username}) }); if(res.ok) { joinCode.value = ""; showSelection(); } else showToast("Codice invito errato", "error"); }
     function doLogout() { localStorage.clear(); location.reload(); }
     if(localStorage.getItem('ezUser')) showSelection();
 
