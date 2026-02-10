@@ -3,9 +3,15 @@ import { MongoClient, ObjectId } from 'mongodb';
 // --- CRYPTO UTILS (Native Web Crypto API) ---
 
 async function hashPassword(password, salt) {
-  const msgBuffer = new TextEncoder().encode(salt + password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  return [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const derivedBits = await crypto.subtle.deriveBits({
+    name: "PBKDF2",
+    salt: enc.encode(salt),
+    iterations: 100000,
+    hash: "SHA-256"
+  }, keyMaterial, 256);
+  return [...new Uint8Array(derivedBits)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function signJWT(payload, secret) {
@@ -40,10 +46,13 @@ export default {
     const url = new URL(request.url);
     let client; // Definiamo il client qui per averlo a disposizione nel blocco finally
     const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
     };
+
+    // Helper per risposte JSON coerenti (spostato fuori dal try per usarlo anche nel catch)
+    const resJson = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: corsHeaders });
 
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -52,7 +61,6 @@ export default {
       client = new MongoClient(env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 }); // Aggiunto timeout
       await client.connect();
       const db = client.db("EzGest");
-      const resJson = (d) => new Response(JSON.stringify(d), { headers: corsHeaders });
 
       // --- AUTH & AZIENDE ---
       if (url.pathname === "/api/login" && request.method === "POST") {
@@ -249,7 +257,8 @@ export default {
 
       return new Response("Not Found", { status: 404 });
     } catch (e) {
-      return new Response(e.message, { status: 500, headers: corsHeaders });
+      console.error("Server Error:", e); // Logga l'errore nella console di Wrangler
+      return resJson({ success: false, message: e.message || "Errore interno del server" }, 500);
     } finally {
       // Assicuriamoci di chiudere la connessione in ogni caso per liberare le risorse.
       if (client) {
