@@ -1,7 +1,6 @@
 import { MongoClient, ObjectId } from 'mongodb';
 
 // --- CRYPTO UTILS (Native Web Crypto API) ---
-const SECRET = "CAMBIAMI_CON_UNA_STRINGA_SEGRETA_LUNGA"; // In prod usa env.JWT_SECRET
 
 async function hashPassword(password, salt) {
   const msgBuffer = new TextEncoder().encode(salt + password);
@@ -9,24 +8,24 @@ async function hashPassword(password, salt) {
   return [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function signJWT(payload) {
+async function signJWT(payload, secret) {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const body = btoa(JSON.stringify({ ...payload, exp: Date.now() + 86400000 })); // 24h
   const unsignedToken = `${header}.${body}`;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(unsignedToken));
   const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   return `${unsignedToken}.${signatureBase64}`;
 }
 
-async function verifyJWT(request) {
+async function verifyJWT(request, secret) {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const token = authHeader.split(" ")[1];
   const [header, body, signature] = token.split(".");
   if (!header || !body || !signature) return null;
   
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
   const signatureBin = Uint8Array.from(atob(signature.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
   const isValid = await crypto.subtle.verify("HMAC", key, signatureBin, new TextEncoder().encode(`${header}.${body}`));
   
@@ -39,7 +38,7 @@ async function verifyJWT(request) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const client = new MongoClient(env.MONGODB_URI);
+    let client; // Definiamo il client qui per averlo a disposizione nel blocco finally
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -49,6 +48,8 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
+      // Stabiliamo una nuova connessione per ogni richiesta per evitare "hang" dovuti a connessioni stale.
+      client = new MongoClient(env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 }); // Aggiunto timeout
       await client.connect();
       const db = client.db("EzGest");
       const resJson = (d) => new Response(JSON.stringify(d), { headers: corsHeaders });
@@ -62,7 +63,7 @@ export default {
         const inputHash = await hashPassword(password, user.salt);
         if (inputHash !== user.password) return resJson({ success: false, message: "Credenziali errate" });
         
-        const token = await signJWT({ email: user.email, nome: user.nome, cognome: user.cognome, id: user._id });
+        const token = await signJWT({ email: user.email, nome: user.nome, cognome: user.cognome, id: user._id }, env.JWT_SECRET);
         return resJson({ success: true, user, token });
       }
 
@@ -89,15 +90,21 @@ export default {
 
       // --- MIDDLEWARE AUTH CHECK ---
       // Tutte le rotte sotto richiedono un token valido
-      const userPayload = await verifyJWT(request);
+      const userPayload = await verifyJWT(request, env.JWT_SECRET);
       if (!userPayload) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
 
       if (url.pathname === "/api/user/companies" && request.method === "GET") {
         const email = userPayload.email;
         const user = await db.collection("users").findOne({ email });
-        if (!user || !user.companies) return resJson([]);
+        if (!user || !user.companies || !Array.isArray(user.companies)) return resJson([]);
+        
+        // Conversione sicura degli ID per evitare crash/hang se un ID è invalido
+        const companyIds = user.companies
+          .map(id => { try { return new ObjectId(id); } catch (e) { return null; } })
+          .filter(id => id !== null);
+
         const companies = await db.collection("companies").find({ 
-          _id: { $in: user.companies.map(id => new ObjectId(id)) } 
+          _id: { $in: companyIds } 
         }).toArray();
         return resJson(companies);
       }
@@ -244,7 +251,10 @@ export default {
     } catch (e) {
       return new Response(e.message, { status: 500, headers: corsHeaders });
     } finally {
-      await client.close();
+      // Assicuriamoci di chiudere la connessione in ogni caso per liberare le risorse.
+      if (client) {
+        await client.close();
+      }
     }
   }
 };
