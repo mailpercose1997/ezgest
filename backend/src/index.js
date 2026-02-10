@@ -143,6 +143,7 @@ export default {
       // --- MIDDLEWARE AUTHORIZATION CHECK ---
       // Se la richiesta specifica un companyId, verifica che l'utente ne faccia parte
       if (companyId) {
+        if (!ObjectId.isValid(companyId)) return new Response("Invalid Company ID", { status: 400, headers: corsHeaders });
         const user = await db.collection("users").findOne({ email: userPayload.email });
         // Verifica se l'array companies dell'utente contiene l'ID richiesto
         if (!user || !user.companies || !user.companies.includes(companyId)) {
@@ -158,12 +159,17 @@ export default {
           return resJson({ success: true });
         }
         if (request.method === "PUT") {
+          if (!id || !ObjectId.isValid(id)) return resJson({ success: false, message: "ID non valido" }, 400);
           const { nome } = await request.json();
-          await db.collection("categories").updateOne({ _id: new ObjectId(id) }, { $set: { nome } });
+          // FIX SICUREZZA: Aggiunto companyId al filtro per evitare modifiche tra aziende diverse
+          const result = await db.collection("categories").updateOne({ _id: new ObjectId(id), companyId }, { $set: { nome } });
+          if (result.matchedCount === 0) return resJson({ success: false, message: "Categoria non trovata" }, 404);
           return resJson({ success: true });
         }
         if (request.method === "DELETE") {
-          await db.collection("categories").deleteOne({ _id: new ObjectId(id) });
+          if (!id || !ObjectId.isValid(id)) return resJson({ success: false, message: "ID non valido" }, 400);
+          const result = await db.collection("categories").deleteOne({ _id: new ObjectId(id), companyId });
+          if (result.deletedCount === 0) return resJson({ success: false, message: "Categoria non trovata" }, 404);
           return resJson({ success: true });
         }
       }
@@ -176,13 +182,18 @@ export default {
           return resJson({ success: true });
         }
         if (request.method === "PUT") {
+          if (!id || !ObjectId.isValid(id)) return resJson({ success: false, message: "ID non valido" }, 400);
           const data = await request.json();
           delete data._id;
-          await db.collection("products").updateOne({ _id: new ObjectId(id) }, { $set: data });
+          // FIX SICUREZZA: Aggiunto companyId al filtro
+          const result = await db.collection("products").updateOne({ _id: new ObjectId(id), companyId }, { $set: data });
+          if (result.matchedCount === 0) return resJson({ success: false, message: "Prodotto non trovato" }, 404);
           return resJson({ success: true });
         }
         if (request.method === "DELETE") {
-          await db.collection("products").deleteOne({ _id: new ObjectId(id) });
+          if (!id || !ObjectId.isValid(id)) return resJson({ success: false, message: "ID non valido" }, 400);
+          const result = await db.collection("products").deleteOne({ _id: new ObjectId(id), companyId });
+          if (result.deletedCount === 0) return resJson({ success: false, message: "Prodotto non trovato" }, 404);
           return resJson({ success: true });
         }
       }
@@ -191,6 +202,10 @@ export default {
         if (request.method === "GET") return resJson(await db.collection("sales").find({ companyId }).sort({ createdAt: -1 }).toArray());
         if (request.method === "POST") {
           const body = await request.json();
+          // Miglioramento: Convertiamo i prezzi in numeri per performance e pulizia dati
+          if (body.items && Array.isArray(body.items)) {
+            body.items = body.items.map(i => ({ ...i, prezzo: parseFloat(i.prezzo) || 0 }));
+          }
           await db.collection("sales").insertOne({ ...body, companyId, createdAt: new Date() });
           return resJson({ success: true });
         }
