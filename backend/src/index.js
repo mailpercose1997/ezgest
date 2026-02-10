@@ -99,7 +99,7 @@ export default {
       // --- MIDDLEWARE AUTH CHECK ---
       // Tutte le rotte sotto richiedono un token valido
       const userPayload = await verifyJWT(request, env.JWT_SECRET);
-      if (!userPayload) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+      if (!userPayload) return resJson({ success: false, message: "Unauthorized" }, 401);
 
       if (url.pathname === "/api/user/companies" && request.method === "GET") {
         const email = userPayload.email;
@@ -119,6 +119,7 @@ export default {
 
       if (url.pathname === "/api/azienda/crea" && request.method === "POST") {
         const { companyName } = await request.json();
+        if (!companyName) return resJson({ success: false, message: "Nome azienda richiesto" }, 400);
         const result = await db.collection("companies").insertOne({ 
           name: companyName, 
           inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(), 
@@ -131,7 +132,7 @@ export default {
       if (url.pathname === "/api/azienda/unisciti" && request.method === "POST") {
         const { inviteCode } = await request.json();
         const co = await db.collection("companies").findOne({ inviteCode });
-        if(!co) return new Response("Codice Errato", { status: 400, headers: corsHeaders });
+        if(!co) return resJson({ success: false, message: "Codice Errato" }, 400);
         await db.collection("users").updateOne({ email: userPayload.email }, { $addToSet: { companies: co._id.toString() } });
         return resJson({ success: true });
       }
@@ -143,11 +144,11 @@ export default {
       // --- MIDDLEWARE AUTHORIZATION CHECK ---
       // Se la richiesta specifica un companyId, verifica che l'utente ne faccia parte
       if (companyId) {
-        if (!ObjectId.isValid(companyId)) return new Response("Invalid Company ID", { status: 400, headers: corsHeaders });
+        if (!ObjectId.isValid(companyId)) return resJson({ success: false, message: "Invalid Company ID" }, 400);
         const user = await db.collection("users").findOne({ email: userPayload.email });
         // Verifica se l'array companies dell'utente contiene l'ID richiesto
         if (!user || !user.companies || !user.companies.includes(companyId)) {
-          return new Response("Forbidden: Accesso negato a questa azienda", { status: 403, headers: corsHeaders });
+          return resJson({ success: false, message: "Forbidden: Accesso negato a questa azienda" }, 403);
         }
       }
 
@@ -217,11 +218,24 @@ export default {
         const category = url.searchParams.get("category");
         const product = url.searchParams.get("product");
 
-        const matchStage = { companyId };
+        // Ottimizzazione: Prepariamo i filtri prodotto PRIMA della pipeline
+        const itemMatch = {};
+        if (category && category !== 'TUTTI') itemMatch["items.categoria"] = category;
+        if (product && product !== 'TUTTI') itemMatch["items.nome"] = product;
+
+        // Applichiamo i filtri anche al primo match per ridurre i documenti da processare (Performance Boost)
+        const matchStage = { companyId, ...itemMatch };
+
         if (from || to) {
           matchStage.createdAt = {};
           if (from) matchStage.createdAt.$gte = new Date(from);
           if (to) matchStage.createdAt.$lte = new Date(to + 'T23:59:59.999Z');
+        } else {
+          // Default: Ultimi 7 giorni
+          const d = new Date();
+          d.setDate(d.getDate() - 7);
+          d.setHours(0, 0, 0, 0);
+          matchStage.createdAt = { $gte: d };
         }
 
         const pipeline = [
@@ -229,10 +243,6 @@ export default {
           { $unwind: "$items" }
         ];
 
-        const itemMatch = {};
-        if (category && category !== 'TUTTI') itemMatch["items.categoria"] = category;
-        if (product && product !== 'TUTTI') itemMatch["items.nome"] = product;
-        
         if (Object.keys(itemMatch).length > 0) pipeline.push({ $match: itemMatch });
 
         pipeline.push({ $addFields: { priceVal: { $toDouble: "$items.prezzo" } } });
@@ -270,7 +280,7 @@ export default {
         return resJson(results[0]);
       }
 
-      return new Response("Not Found", { status: 404 });
+      return resJson({ success: false, message: "Not Found" }, 404);
     } catch (e) {
       console.error("Server Error:", e); // Logga l'errore nella console di Wrangler
       return resJson({ success: false, message: e.message || "Errore interno del server" }, 500);
