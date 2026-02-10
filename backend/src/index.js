@@ -268,10 +268,6 @@ export default {
 
       return new Response("Not Found", { status: 404 });
     } catch (e) {
-      // Se c'è un errore di connessione, resetta il client per la prossima richiesta
-      if (e.message.includes("topology") || e.message.includes("connection") || e.message.includes("closed")) {
-        client = null;
-      }
       return new Response(e.message, { status: 500, headers: corsHeaders });
     }
   }
