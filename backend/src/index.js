@@ -36,7 +36,10 @@ async function verifyJWT(request, secret) {
   if (!header || !body || !signature) return null;
   
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-  const signatureBin = Uint8Array.from(atob(signature.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  // Fix Base64Url padding per atob
+  let signatureBase64 = signature.replace(/-/g, '+').replace(/_/g, '/');
+  while (signatureBase64.length % 4) signatureBase64 += '=';
+  const signatureBin = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
   const isValid = await crypto.subtle.verify("HMAC", key, signatureBin, new TextEncoder().encode(`${header}.${body}`));
   
   if (!isValid) return null;
@@ -218,6 +221,10 @@ export default {
         if (request.method === "POST") {
           const body = await request.json();
           // Miglioramento: Convertiamo i prezzi in numeri per performance e pulizia dati
+          if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
+             return resJson({ success: false, message: "Il carrello è vuoto" }, 400);
+          }
+
           if (body.items && Array.isArray(body.items)) {
             body.items = body.items.map(i => ({ ...i, prezzo: parseFloat(i.prezzo) || 0 }));
           }
