@@ -1,7 +1,8 @@
 import { MongoClient, ObjectId } from 'mongodb';
+import { signJWT, verifyJWT } from './auth.js';
 
 function escapeRegex(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return string.replace(/[.*+?^${}()|[\\\]\\]/g, '\\$&');
 }
 
 // --- CRYPTO UTILS (Native Web Crypto API) ---
@@ -16,36 +17,6 @@ async function hashPassword(password, salt) {
     hash: "SHA-256"
   }, keyMaterial, 256);
   return [...new Uint8Array(derivedBits)].map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function signJWT(payload, secret) {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const body = btoa(JSON.stringify({ ...payload, exp: Date.now() + 604800000 })); // 7 giorni
-  const unsignedToken = `${header}.${body}`;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(unsignedToken));
-  const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  return `${unsignedToken}.${signatureBase64}`;
-}
-
-async function verifyJWT(request, secret) {
-  const authHeader = request.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
-  const token = authHeader.split(" ")[1];
-  const [header, body, signature] = token.split(".");
-  if (!header || !body || !signature) return null;
-  
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-  // Fix Base64Url padding per atob
-  let signatureBase64 = signature.replace(/-/g, '+').replace(/_/g, '/');
-  while (signatureBase64.length % 4) signatureBase64 += '=';
-  const signatureBin = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
-  const isValid = await crypto.subtle.verify("HMAC", key, signatureBin, new TextEncoder().encode(`${header}.${body}`));
-  
-  if (!isValid) return null;
-  const payload = JSON.parse(atob(body));
-  if (Date.now() > payload.exp) return null;
-  return payload;
 }
 
 export default {
@@ -105,7 +76,10 @@ export default {
 
       // --- MIDDLEWARE AUTH CHECK ---
       // Tutte le rotte sotto richiedono un token valido
-      const userPayload = await verifyJWT(request, env.JWT_SECRET);
+      const authHeader = request.headers.get("Authorization");
+      if (!authHeader || !authHeader.startsWith("Bearer ")) return resJson({ success: false, message: "Unauthorized" }, 401);
+      const token = authHeader.split(" ")[1];
+      const userPayload = await verifyJWT(token, env.JWT_SECRET);
       if (!userPayload) return resJson({ success: false, message: "Unauthorized" }, 401);
 
       if (url.pathname === "/api/user/companies" && request.method === "GET") {
@@ -237,7 +211,7 @@ export default {
         const from = url.searchParams.get("from");
         const to = url.searchParams.get("to");
         const category = url.searchParams.get("category");
-        const product = url.searchParams.get("product");
+        const product = url.search_params.get("product");
 
         // Ottimizzazione: Prepariamo i filtri prodotto PRIMA della pipeline
         const itemMatch = {};
