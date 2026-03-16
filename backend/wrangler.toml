@@ -3,7 +3,19 @@ main = "src/index.js"
 compatibility_date = "2026-02-05"
 compatibility_flags = [ "nodejs_compat" ]
 
+[durable_objects]
+bindings = [
+  { name = "RATE_LIMITER", class_name = "RateLimiter" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RateLimiter"]
+
 [vars]
 DB_NAME = "EzGest"
 
 # Questo dice a wrangler di includere i segreti dal file .dev.vars durante i test locali
+
+[dev]
+port = 8787

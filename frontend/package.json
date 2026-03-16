@@ -2,9 +2,10 @@
   "name": "frontend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "npx --yes http-server -p 5173 -c-1 .",
+    "dev:open": "npx --yes http-server -p 5173 -c-1 . -o"
   },
   "keywords": [],
   "author": "",

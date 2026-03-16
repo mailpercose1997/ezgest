@@ -1,7 +1,7 @@
 // Rileva automaticamente se siamo in locale o produzione
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API = isLocal ? 'http://localhost:8787/api' : '/api'; // In prod si assume che il frontend sia servito dallo stesso dominio o configurato via proxy
-let currentId = null, cart = [], allCats = [], allProducts = [], activeCatFilter = 'TUTTI', charts = {}, currentReceipts = [];
+let currentId = null, cart = [], allCats = [], allProducts = [], activeCatFilter = 'TUTTI', posSearch = '', charts = {}, currentReceipts = [], lastReportData = null;
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#e11d48', '#8b5cf6', '#06b6d4', '#f43f5e', '#ec4899'];
 
 // Wrapper per chiamate API autenticate
@@ -11,8 +11,26 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     if(token) headers['Authorization'] = `Bearer ${token}`;
     
     const res = await fetch(`${API}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
-    if(res.status === 401) { doLogout(); return null; }
+    if(res.status === 401) {
+        showToast("Sessione scaduta. Effettua di nuovo l'accesso.", "error");
+        doLogout();
+        return null;
+    }
     return res;
+}
+
+// Helper: ritorna JSON o gestisce errori in modo coerente
+async function apiJson(endpoint, method = 'GET', body = null) {
+    const res = await apiCall(endpoint, method, body);
+    if(!res) return null;
+    let data = null;
+    try { data = await res.json(); } catch(e) { /* noop */ }
+    if(!res.ok) {
+        const msg = data && data.message ? data.message : `Errore API (${res.status})`;
+        showToast(msg, "error");
+        return null;
+    }
+    return data;
 }
 
 function navigate(id) {
@@ -44,33 +62,106 @@ function switchCassaMode(mode) {
 
 // --- POS & CORE (Invariati) ---
 function filterPos(cat) { activeCatFilter = cat; renderPosCategories(); renderPosProducts(); }
+function onPosSearch(val) { posSearch = val.toLowerCase(); renderPosProducts(); }
 function renderPosCategories() {
     const cats = ['TUTTI', ...allCats.map(c => c.nome)];
     document.getElementById('pos-cat-bar').innerHTML = cats.map(c => `<div class="cat-pill ${activeCatFilter === c ? 'active' : ''}" onclick="filterPos('${c}')">${c.toUpperCase()}</div>`).join('');
 }
 function renderPosProducts() {
-    const filtered = activeCatFilter === 'TUTTI' ? allProducts : allProducts.filter(p => p.categoria === activeCatFilter);
+    let filtered = activeCatFilter === 'TUTTI' ? allProducts : allProducts.filter(p => p.categoria === activeCatFilter);
+    if(posSearch) {
+        filtered = filtered.filter(p => p.nome.toLowerCase().includes(posSearch));
+    }
     document.getElementById('pos-products').innerHTML = filtered.map(p => {
-        const qty = cart.filter(i => i._id === p._id).length;
+        const found = cart.find(i => i._id === p._id);
+        const qty = found ? found.qty : 0;
         const badge = qty > 0 ? `<div style="position:absolute; top:-8px; right:-8px; background:var(--d); color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2); z-index:2">${qty}</div>` : '';
         return `<div class="product-card" style="position:relative; overflow:visible" onclick='addToCart(${JSON.stringify(p)})'>${badge}<small>${p.categoria}</small><br><strong>${p.nome}</strong><br><b style="color:var(--p)">${parseFloat(p.prezzo).toFixed(2)}€</b></div>`;
     }).join('');
 }
-function addToCart(p) { cart.push({...p}); renderCart(); }
+function addToCart(p) {
+    const idx = cart.findIndex(i => i._id === p._id);
+    if(idx === -1) {
+        cart.push({...p, qty: 1});
+    } else {
+        cart[idx].qty += 1;
+    }
+    renderCart();
+}
 function renderCart() {
     renderPosProducts(); // Aggiorna i badge quantità
-    document.getElementById('cart-list').innerHTML = cart.map((item, i) => `<div class="cart-item"><span>${item.nome}</span><span>${parseFloat(item.prezzo).toFixed(2)}€ <button onclick="cart.splice(${i},1);renderCart()" style="background:none;color:red;padding:0;cursor:pointer">✕</button></span></div>`).join('');
-    const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0);
+    document.getElementById('cart-list').innerHTML = cart.map((item, i) => {
+        const price = parseFloat(item.prezzo).toFixed(2);
+        return `<div class="cart-item">
+            <span>${item.nome}</span>
+            <span style="display:flex; align-items:center; gap:6px;">
+                <button class="btn-grey" style="padding:2px 8px; font-size:11px;" onclick="changeQty(${i},-1)">-</button>
+                <span>${price}€ x ${item.qty}</span>
+                <button class="btn-grey" style="padding:2px 8px; font-size:11px;" onclick="changeQty(${i},1)">+</button>
+                <button onclick="cart.splice(${i},1);renderCart()" style="background:none;color:red;padding:0 0 0 4px;cursor:pointer">✕</button>
+            </span>
+        </div>`;
+    }).join('');
+    const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo) * (item.qty || 1), 0);
     document.getElementById('cart-sum').innerText = total.toFixed(2);
-    if(document.getElementById('cart-preview-total')) document.getElementById('cart-preview-total').innerText = total.toFixed(2) + '€';
-    if(document.getElementById('cart-count-badge')) document.getElementById('cart-count-badge').innerText = `(${cart.length})`;
+    const prev = document.getElementById('cart-preview-total');
+    if(prev) prev.innerText = total.toFixed(2) + '€';
+    const badge = document.getElementById('cart-count-badge');
+    if(badge) {
+        const totalQty = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+        badge.innerText = `(${totalQty})`;
+    }
+    // reset visual resto quando il carrello cambia
+    const changeEl = document.getElementById('change-amount');
+    const payInput = document.getElementById('pay-amount');
+    if(changeEl) changeEl.innerText = "0.00";
+    if(payInput) payInput.value = "";
 }
 async function processSale() {
     if(!cart.length) return showToast("Il carrello è vuoto", "error");
     // Security Fix: Ricalcola il totale dai dati grezzi, non dal DOM
-    const calculatedTotal = cart.reduce((sum, item) => sum + parseFloat(item.prezzo), 0).toFixed(2);
-    await apiCall(`/vendite?companyId=${currentId}`, 'POST', { items: cart, total: calculatedTotal, date: new Date() });
+    const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo) * (item.qty || 1), 0);
+    const calculatedTotal = total.toFixed(2);
+    // Normalizza gli items con quantità
+    const items = cart.map(i => ({ ...i, qty: i.qty || 1 }));
+    const ok = await apiJson(`/vendite?companyId=${currentId}`, 'POST', { items, total: calculatedTotal, date: new Date() });
+    if(!ok) return;
     showToast("Scontrino Chiuso!", "success"); cart = []; renderCart(); toggleCart();
+}
+
+function changeQty(index, delta) {
+    cart[index].qty = (cart[index].qty || 1) + delta;
+    if(cart[index].qty <= 0) {
+        cart.splice(index, 1);
+    }
+    renderCart();
+}
+
+function toggleChangePanel() {
+    if(!cart.length) { showToast("Il carrello è vuoto", "error"); return; }
+    const panel = document.getElementById('change-panel');
+    if(!panel) return;
+    panel.classList.toggle('hidden');
+    const input = document.getElementById('pay-amount');
+    if(!panel.classList.contains('hidden') && input) {
+        const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo) * (item.qty || 1), 0);
+        input.value = total.toFixed(2);
+        onPayChange(input.value);
+        setTimeout(() => input.focus(), 0);
+    }
+}
+
+function onPayChange(val) {
+    const total = cart.reduce((sum, item) => sum + parseFloat(item.prezzo) * (item.qty || 1), 0);
+    const pay = parseFloat((val || "0").replace(',', '.'));
+    const changeEl = document.getElementById('change-amount');
+    if(!changeEl) return;
+    if(isNaN(pay) || pay <= 0) {
+        changeEl.innerText = "0.00";
+        return;
+    }
+    const change = Math.max(0, pay - total);
+    changeEl.innerText = change.toFixed(2);
 }
 
 // --- STORICO SCONTRINI ---
@@ -82,12 +173,8 @@ async function loadHistory() {
     }
     
     try {
-        const res = await apiCall(`/vendite?companyId=${currentId}&date=${dateInput.value}`);
-        if(!res) return;
-        
-        if(!res.ok) throw new Error(`Errore API (${res.status})`);
-        
-        let receipts = await res.json();
+        let receipts = await apiJson(`/vendite?companyId=${currentId}&date=${dateInput.value}`);
+        if(!receipts) return;
         if(!Array.isArray(receipts)) throw new Error("Formato dati non valido");
         
         // Filtro Client-side e Ordinamento Decrescente (Newest First)
@@ -128,7 +215,12 @@ async function loadHistory() {
 function showReceiptDetails(id) {
     const r = currentReceipts.find(x => x._id === id);
     if(!r || !r.items || !r.items.length) return showToast("Nessun dettaglio prodotti", "neutral");
-    const list = r.items.map(i => `- ${i.nome}: ${parseFloat(i.prezzo).toFixed(2)}€`).join('\n');
+    const list = r.items.map(i => {
+        const qty = i.qty || 1;
+        const unit = parseFloat(i.prezzo).toFixed(2);
+        const lineTot = (parseFloat(i.prezzo) * qty).toFixed(2);
+        return `- ${i.nome} x ${qty}: ${unit}€ (=${lineTot}€)`;
+    }).join('\n');
     alert(`Dettaglio Scontrino:\n\n${list}`);
 }
 
@@ -171,8 +263,9 @@ async function applyReports() {
     if(from) query.append('from', from);
     if(to) query.append('to', to);
 
-    const res = await apiCall(`/reports?${query.toString()}`);
-    const data = await res.json();
+    const data = await apiJson(`/reports?${query.toString()}`);
+    if(!data) return;
+    lastReportData = data;
 
     // Mapping Dati Backend -> UI
     const totalRevenue = data.totals[0] ? data.totals[0].totalRevenue : 0;
@@ -229,6 +322,30 @@ async function applyReports() {
     document.querySelector('#tTopProds tbody').innerHTML = data.topProducts.map(p => `<tr><td>${p._id}</td><td>${p.q}</td><td>${p.t.toFixed(2)}€</td></tr>`).join('');
 }
 
+function exportReportsCsv() {
+    if(!lastReportData) { showToast("Nessun report da esportare. Esegui prima un'analisi.", "error"); return; }
+    const rows = [];
+    rows.push(["Data", "Fatturato Giornaliero"]);
+    lastReportData.trend.forEach(t => {
+        rows.push([t._id, t.dailyTotal]);
+    });
+    rows.push([]);
+    rows.push(["Prodotto", "Quantità", "Ricavo"]);
+    lastReportData.topProducts.forEach(p => {
+        rows.push([p._id, p.q, p.t]);
+    });
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(";")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'ezgest-report.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
 function updateMultiChart(id, type, labels, datasets) {
     if(charts[id]) charts[id].destroy();
     charts[id] = new Chart(document.getElementById(id), {
@@ -253,8 +370,12 @@ function updateChart(id, type, labels, data, label, color = '#2563eb') {
 // --- REFRESH & LOGIN ---
 async function refresh() {
     if(!currentId) return;
-    const [rc, rp] = await Promise.all([apiCall(`/categorie?companyId=${currentId}`), apiCall(`/prodotti?companyId=${currentId}`)]);
-    allCats = await rc.json(); allProducts = await rp.json();
+    const [cats, prods] = await Promise.all([
+        apiJson(`/categorie?companyId=${currentId}`),
+        apiJson(`/prodotti?companyId=${currentId}`)
+    ]);
+    if(!cats || !prods) return;
+    allCats = cats; allProducts = prods;
     document.getElementById('tCats').innerHTML = allCats.map(c => `<tr id="row-cat-${c._id}"><td>${c.nome}</td><td style="text-align:right"><button class="btn-edit" onclick="editCatRow('${c._id}','${c.nome}')">✏️</button> <button class="btn-red" style="padding:5px 8px" onclick="delItem('categorie','${c._id}')">🗑️</button></td></tr>`).join('');
     document.getElementById('selPC').innerHTML = allCats.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
     document.getElementById('tProds').innerHTML = allProducts.map(p => `<tr id="row-prod-${p._id}"><td><strong>${p.nome}</strong><br><small>${p.categoria}</small></td><td>${p.prezzo}€</td><td style="text-align:right"><button class="btn-edit" onclick="editProdRow('${p._id}','${p.nome}',${p.prezzo},'${p.categoria}')">✏️</button> <button class="btn-red" style="padding:5px 8px" onclick="delItem('prodotti','${p._id}')">🗑️</button></td></tr>`).join('');
@@ -275,7 +396,11 @@ async function doLogin() {
     btn.disabled = true; btn.innerText = "Accesso...";
     
     try {
-        const res = await fetch(`${API}/login`, { method: 'POST', body: JSON.stringify({email, password: pass}) });
+        const res = await fetch(`${API}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({email, password: pass})
+        });
         const d = await res.json(); 
         if(d.success) { 
             localStorage.setItem('ezUser', JSON.stringify(d.user)); 
@@ -300,7 +425,11 @@ async function doRegister() {
     btn.disabled = true; btn.innerText = "Attendere...";
 
     try {
-        const res = await fetch(`${API}/register`, { method: 'POST', body: JSON.stringify({nome, cognome, dob, email, password: pass}) });
+        const res = await fetch(`${API}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({nome, cognome, dob, email, password: pass})
+        });
         const d = await res.json();
         if(d.success) { 
             showToast("Registrato! Ora accedi.", "success"); 
@@ -314,8 +443,8 @@ async function doRegister() {
 async function showSelection() {
     const user = JSON.parse(localStorage.getItem('ezUser'));
     if(!user) return navigate('view-login'); navigate('view-selection');
-    const res = await apiCall(`/user/companies`); // Username preso dal token backend
-    const cos = await res.json();
+    const cos = await apiJson(`/user/companies`); // Username preso dal token backend
+    if(!cos) return;
     document.getElementById('list-companies').innerHTML = cos.map(c => `<button class="btn-grey" onclick="openDash('${c._id}','${c.name}','${c.inviteCode}')">${c.name}</button>`).join(' ');
 }
 function openDash(id, name, code) { currentId = id; document.getElementById('activeCoName').innerText = name; document.getElementById('activeCoCode').innerText = "Cod: "+code; navigate('view-dashboard'); switchTab('cassa'); }
@@ -331,16 +460,32 @@ function showToast(msg, type = 'neutral') {
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
 }
 
-async function addCat() { await apiCall(`/categorie?companyId=${currentId}`, 'POST', {nome: inCat.value}); inCat.value = ""; refresh(); showToast('Categoria aggiunta', 'success'); }
-async function addProd() { await apiCall(`/prodotti?companyId=${currentId}`, 'POST', {nome: inPN.value, prezzo: inPP.value, categoria: selPC.value}); inPN.value = ""; inPP.value = ""; refresh(); showToast('Prodotto aggiunto', 'success'); }
-async function delItem(t, id) { if(confirm("Eliminare?")) { await apiCall(`/${t}?id=${id}&companyId=${currentId}`, 'DELETE'); refresh(); showToast('Elemento eliminato'); } }
+async function addCat() {
+    const ok = await apiJson(`/categorie?companyId=${currentId}`, 'POST', {nome: inCat.value});
+    if(!ok) return;
+    inCat.value = ""; refresh(); showToast('Categoria aggiunta', 'success');
+}
+async function addProd() {
+    const ok = await apiJson(`/prodotti?companyId=${currentId}`, 'POST', {nome: inPN.value, prezzo: inPP.value, categoria: selPC.value});
+    if(!ok) return;
+    inPN.value = ""; inPP.value = ""; refresh(); showToast('Prodotto aggiunto', 'success');
+}
+async function delItem(t, id) {
+    if(confirm("Eliminare?")) {
+        const ok = await apiJson(`/${t}?id=${id}&companyId=${currentId}`, 'DELETE');
+        if(!ok) return;
+        refresh(); showToast('Elemento eliminato');
+    }
+}
 
 function editCatRow(id, name) {
     const row = document.getElementById(`row-cat-${id}`);
     row.innerHTML = `<td><input id="e-cn-${id}" value="${name}"></td><td style="text-align:right"><button class="btn-save" onclick="saveCat('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
 }
 async function saveCat(id) {
-    await apiCall(`/categorie?id=${id}&companyId=${currentId}`, 'PUT', {nome: document.getElementById(`e-cn-${id}`).value}); refresh(); showToast('Categoria modificata', 'success');
+    const ok = await apiJson(`/categorie?id=${id}&companyId=${currentId}`, 'PUT', {nome: document.getElementById(`e-cn-${id}`).value});
+    if(!ok) return;
+    refresh(); showToast('Categoria modificata', 'success');
 }
 function editProdRow(id, name, price, cat) {
     const row = document.getElementById(`row-prod-${id}`);
@@ -348,11 +493,21 @@ function editProdRow(id, name, price, cat) {
     row.innerHTML = `<td><input id="e-pn-${id}" value="${name}" style="margin-bottom:5px"><select id="e-pc-${id}">${opts}</select></td><td><input id="e-pp-${id}" value="${price}" type="number" style="width:70px">€</td><td style="text-align:right"><button class="btn-save" onclick="saveProd('${id}')">💾</button> <button class="btn-grey" onclick="refresh()">❌</button></td>`;
 }
 async function saveProd(id) {
-    await apiCall(`/prodotti?id=${id}&companyId=${currentId}`, 'PUT', {nome: document.getElementById(`e-pn-${id}`).value, prezzo: document.getElementById(`e-pp-${id}`).value, categoria: document.getElementById(`e-pc-${id}`).value}); refresh(); showToast('Prodotto salvato', 'success');
+    const ok = await apiJson(`/prodotti?id=${id}&companyId=${currentId}`, 'PUT', {nome: document.getElementById(`e-pn-${id}`).value, prezzo: document.getElementById(`e-pp-${id}`).value, categoria: document.getElementById(`e-pc-${id}`).value});
+    if(!ok) return;
+    refresh(); showToast('Prodotto salvato', 'success');
 }
 
-async function doCreateCo() { await apiCall(`/azienda/crea`, 'POST', {companyName: newCo.value}); newCo.value = ""; showSelection(); }
-async function doJoinCo() { const res = await apiCall(`/azienda/unisciti`, 'POST', {inviteCode: joinCode.value}); if(res && res.ok) { joinCode.value = ""; showSelection(); } else showToast("Codice invito errato", "error"); }
+async function doCreateCo() {
+    const ok = await apiJson(`/azienda/crea`, 'POST', {companyName: newCo.value});
+    if(!ok) return;
+    newCo.value = ""; showSelection();
+}
+async function doJoinCo() {
+    const ok = await apiJson(`/azienda/unisciti`, 'POST', {inviteCode: joinCode.value});
+    if(!ok) return;
+    joinCode.value = ""; showSelection();
+}
 function doLogout() { localStorage.clear(); location.reload(); }
 if(localStorage.getItem('ezUser')) showSelection();
 
@@ -370,6 +525,6 @@ function toggleReportFilters() {
 // PWA Service Worker Registration
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW registered', reg)).catch(err => console.log('SW failed', err));
+        navigator.serviceWorker.register('sw.js').then(reg => console.log('SW registered', reg)).catch(err => console.log('SW failed', err));
     });
 }

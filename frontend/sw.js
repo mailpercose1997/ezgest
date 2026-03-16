@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ezgest-v7';
+const CACHE_NAME = 'ezgest-v12';
 const urlsToCache = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', event => {

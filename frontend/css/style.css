@@ -21,10 +21,13 @@
         .tab.active { color: var(--p); border-bottom-color: var(--p); }
 
         /* POS UI */
-        .category-slider { display: flex; overflow-x: auto; gap: 8px; padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--border); scrollbar-width: none; }
+        .pos-toolbar { display:flex; align-items:center; gap:12px; padding: 12px 20px; background:#fff; border-bottom:1px solid var(--border); }
+        .category-slider { display: flex; overflow-x: auto; gap: 8px; padding: 0; scrollbar-width: none; }
         .cat-pill { flex: 0 0 auto; padding: 8px 16px; border-radius: 99px; background: #f8fafc; border: 1px solid var(--border); cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; color: #475569; }
         .cat-pill:hover { background: #f1f5f9; border-color: #cbd5e1; }
         .cat-pill.active { background: var(--p); color: white; border-color: var(--p); box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }
+        .pos-search { flex:0 0 220px; }
+        #pos-search-input { margin-bottom:0; font-size:13px; }
 
         .tab-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
         #sub-cassa { height: 100%; }
@@ -45,6 +48,7 @@
         .cart-items { flex: 1; overflow-y: auto; padding: 15px; }
         .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.95rem; }
         .cart-total { padding: 20px; background: #f8fafc; border-top: 1px solid var(--border); }
+        .change-panel { margin-top:4px; }
         
         .cart-header-mobile { display: none; }
         .cart-header-desktop { padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; }

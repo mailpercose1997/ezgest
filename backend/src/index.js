@@ -1,8 +1,58 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { signJWT, verifyJWT } from './auth.js';
+import { RateLimiter } from './rateLimiterDO.js';
 
 function escapeRegex(string) {
   return string.replace(/[.*+?^${}()|[\\\]\\]/g, '\\$&');
+}
+
+function getClientIp(request) {
+  return (
+    request.headers.get("CF-Connecting-IP") ||
+    (request.headers.get("X-Forwarded-For") || "").split(",")[0].trim() ||
+    request.headers.get("X-Real-IP") ||
+    "unknown"
+  );
+}
+
+async function rateLimitDO(env, { key, limit, windowMs }) {
+  const id = env.RATE_LIMITER.idFromName("global");
+  const stub = env.RATE_LIMITER.get(id);
+  const res = await stub.fetch("http://rate-limiter/limit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, limit, windowMs }),
+  });
+  if (!res.ok) return { ok: true };
+  return await res.json();
+}
+
+// --- Index management (best-effort per isolate) ---
+let _indexesEnsured = false;
+let _ensureIndexesPromise = null;
+async function ensureIndexes(db) {
+  if (_indexesEnsured) return;
+  if (_ensureIndexesPromise) return _ensureIndexesPromise;
+  _ensureIndexesPromise = (async () => {
+    try {
+      // Core query patterns:
+      // - sales by company/date
+      // - products by company + soft-delete flag
+      // - categories by company
+      await Promise.allSettled([
+        db.collection("sales").createIndex({ companyId: 1, createdAt: -1 }),
+        db.collection("products").createIndex({ companyId: 1, deletedAt: 1 }),
+        db.collection("categories").createIndex({ companyId: 1 }),
+        db.collection("companies").createIndex({ inviteCode: 1 }, { unique: true }),
+        db.collection("users").createIndex({ email: 1 }, { unique: true }),
+      ]);
+      _indexesEnsured = true;
+    } catch (e) {
+      // Non-blocking: indexes can be created manually if needed.
+      console.warn("Index creation skipped/failed:", e?.message || e);
+    }
+  })();
+  return _ensureIndexesPromise;
 }
 
 // --- CRYPTO UTILS (Native Web Crypto API) ---
@@ -30,18 +80,39 @@ export default {
     };
 
     // Helper per risposte JSON coerenti (spostato fuori dal try per usarlo anche nel catch)
-    const resJson = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: corsHeaders });
+    const resJson = (data, status = 200) =>
+      new Response(JSON.stringify(data), {
+        status,
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      });
 
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
+      // Endpoint di health-check / root (nessuna auth richiesta)
+      if (url.pathname === "/" && request.method === "GET") {
+        return new Response("EzGest API OK", {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }
+
+      // Evita 401 inutili per /favicon.ico
+      if (url.pathname === "/favicon.ico" && request.method === "GET") {
+        return new Response(null, { status: 204, headers: corsHeaders });
+      }
+
       // Stabiliamo una nuova connessione per ogni richiesta per evitare "hang" dovuti a connessioni stale.
       client = new MongoClient(env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 }); // Aggiunto timeout
       await client.connect();
-      const db = client.db("EzGest");
+      const db = client.db(env.DB_NAME || "EzGest");
+      await ensureIndexes(db);
 
       // --- AUTH & AZIENDE ---
       if (url.pathname === "/api/login" && request.method === "POST") {
+        const ip = getClientIp(request);
+        const rl = await rateLimitDO(env, { key: `login:${ip}`, limit: 10, windowMs: 60_000 });
+        if (!rl.ok) return resJson({ success: false, message: "Troppi tentativi. Riprova tra poco." }, 429);
         const { email, password } = await request.json();
         const user = await db.collection("users").findOne({ email });
         if (!user || !user.salt) return resJson({ success: false, message: "Credenziali errate" });
@@ -54,6 +125,9 @@ export default {
       }
 
       if (url.pathname === "/api/register" && request.method === "POST") {
+        const ip = getClientIp(request);
+        const rl = await rateLimitDO(env, { key: `register:${ip}`, limit: 5, windowMs: 60_000 });
+        if (!rl.ok) return resJson({ success: false, message: "Troppi tentativi. Riprova tra poco." }, 429);
         const { nome, cognome, dob, email, password } = await request.json();
         
         if (!nome || !cognome) return resJson({ success: false, message: "Nome e Cognome richiesti" });
@@ -191,7 +265,18 @@ export default {
       }
 
       if (url.pathname === "/api/vendite") {
-        if (request.method === "GET") return resJson(await db.collection("sales").find({ companyId }).sort({ createdAt: -1 }).toArray());
+        if (request.method === "GET") {
+          const date = url.searchParams.get("date"); // YYYY-MM-DD (usato dallo storico nel frontend)
+          const query = { companyId };
+          if (date) {
+            const start = new Date(date + "T00:00:00.000Z");
+            const end = new Date(date + "T23:59:59.999Z");
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+              query.createdAt = { $gte: start, $lte: end };
+            }
+          }
+          return resJson(await db.collection("sales").find(query).sort({ createdAt: -1 }).toArray());
+        }
         if (request.method === "POST") {
           const body = await request.json();
           // Miglioramento: Convertiamo i prezzi in numeri per performance e pulizia dati
@@ -200,7 +285,11 @@ export default {
           }
 
           if (body.items && Array.isArray(body.items)) {
-            body.items = body.items.map(i => ({ ...i, prezzo: parseFloat(i.prezzo) || 0 }));
+            body.items = body.items.map(i => ({
+              ...i,
+              prezzo: parseFloat(i.prezzo) || 0,
+              qty: Number.isFinite(i.qty) && i.qty > 0 ? i.qty : 1
+            }));
           }
           await db.collection("sales").insertOne({ ...body, companyId, createdAt: new Date() });
           return resJson({ success: true });
@@ -211,7 +300,7 @@ export default {
         const from = url.searchParams.get("from");
         const to = url.searchParams.get("to");
         const category = url.searchParams.get("category");
-        const product = url.search_params.get("product");
+        const product = url.searchParams.get("product");
 
         // Ottimizzazione: Prepariamo i filtri prodotto PRIMA della pipeline
         const itemMatch = {};
@@ -240,7 +329,19 @@ export default {
 
         if (Object.keys(itemMatch).length > 0) pipeline.push({ $match: itemMatch });
 
-        pipeline.push({ $addFields: { priceVal: { $toDouble: "$items.prezzo" } } });
+        pipeline.push({
+          $addFields: {
+            qtyVal: {
+              $cond: [
+                { $and: [ { $ne: ["$items.qty", null] }, { $gt: ["$items.qty", 0] } ] },
+                "$items.qty",
+                1
+              ]
+            }
+          }
+        });
+
+        pipeline.push({ $addFields: { priceVal: { $multiply: [ { $toDouble: "$items.prezzo" }, "$qtyVal" ] } } });
 
         pipeline.push({
           $facet: {
@@ -260,12 +361,12 @@ export default {
               { $sort: { "_id.d": 1 } }
             ],
             "hourly": [
-              { $group: { _id: { $hour: "$createdAt" }, count: { $sum: 1 } } }, // Conta oggetti venduti per ora come proxy di attività
+              { $group: { _id: { $hour: "$createdAt" }, count: { $sum: "$qtyVal" } } }, // Conta quantità vendute per ora
               { $sort: { _id: 1 } }
             ],
             "byCategory": [ { $group: { _id: "$items.categoria", total: { $sum: "$priceVal" } } } ],
             "topProducts": [
-              { $group: { _id: "$items.nome", q: { $sum: 1 }, t: { $sum: "$priceVal" } } },
+              { $group: { _id: "$items.nome", q: { $sum: "$qtyVal" }, t: { $sum: "$priceVal" } } },
               { $sort: { q: -1 } }, { $limit: 5 }
             ]
           }
@@ -287,3 +388,5 @@ export default {
     }
   }
 };
+
+export { RateLimiter };

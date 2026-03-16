@@ -1,0 +1,10 @@
+{
+  "name": "ezgest",
+  "private": true,
+  "scripts": {
+    "dev": "npx --yes concurrently -n backend,frontend -c blue,green \"npm:dev --prefix backend\" \"npm:dev --prefix frontend\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend"
+  }
+}
+
